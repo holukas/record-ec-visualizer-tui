@@ -1,0 +1,19 @@
+/* No borders and no margins between the two plots: the header line of each
+   panel is the separator, so every non-plot row carries information. */
+
+Screen {
+    background: $surface;
+}
+
+.plot {
+    height: 1fr;
+    min-height: 6;
+    padding: 0 1;
+}
+
+#status {
+    height: 1;
+    padding: 0 2;
+    background: $panel;
+    color: $text-muted;
+}
