@@ -1,0 +1,23 @@
+# Line endings
+# ------------
+# Every tracked text file is already stored as LF (verified with
+# `git ls-files --eol`: no blob has i/crlf), so this rule adds no
+# renormalization diff. It states that explicitly instead of leaving it to each
+# developer's core.autocrlf, and eol=lf checks files out as LF on Windows too,
+# which is what stops the "LF will be replaced by CRLF" warning on every commit.
+* text=auto eol=lf
+
+# Textual stylesheets are plain text; name them so the heuristic cannot guess.
+*.tcss    text
+
+# Binary formats. Git's heuristic already detects these, but naming them means
+# a truncated or unusual file can never be mistaken for text and mangled.
+*.png     binary
+*.gz      binary
+*.dat     binary
+*.parquet binary
+
+# Windows-only scripts are safest with CRLF.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
