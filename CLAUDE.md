@@ -56,6 +56,29 @@ rule that separates it from the plot above) followed by braille rows. Borders
 would cost four rows of plot for decoration. The header degrades by dropping
 parts — units first, then metadata — instead of wrapping.
 
+**Render cost is a real constraint, not a micro-optimisation.** The intended
+deployment is the logging host, where rECorD's 20 Hz loop warns as soon as a
+cycle exceeds 50 ms, so the TUI must stay out of its way. Three things keep it
+cheap, and all three should survive future edits:
+
+- `plot._decimate` collapses series denser than the dot grid to the per-column
+  min/max envelope. The picture is identical — a dense trace's vertical smear
+  *is* its envelope — and cost stops scaling with history length.
+- `render_braille_plot` appends runs of same-styled cells, not one `Text.append`
+  per cell. A frame is 1600+ cells and that call was 36% of render time.
+- `VisualizerApp._refresh` only redraws a panel when its stream delivered
+  something or the panel resized. sonicshow speaks at 1 Hz, so redrawing the
+  wind plot on every tick was seven-eighths wasted.
+
+Together those took a refresh from ~52 ms/s to ~20 ms/s. When touching this
+path, measure rather than reason: the first guess (that segment drawing
+dominated) was wrong, and a profile said otherwise.
+
+One correctness rule in `model.LiveState.ingest_sonicshow`: every wind
+component gets a sample from every message, `nan` if absent or unparseable.
+The plot maps a sample's *index* to an x position, so a series that skipped an
+entry would render shifted against the others for the rest of the run.
+
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block — Textual routes it through a cp1252
 stream on Windows and non-ASCII output raises. For the same reason, user-facing
