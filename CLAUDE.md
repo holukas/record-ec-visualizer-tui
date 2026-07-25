@@ -1,0 +1,366 @@
+# CLAUDE.md
+
+Guidance for Claude Code when working in this repository.
+
+## What this project is
+
+A terminal UI (Textual) that visualizes, in real time, the data acquired by
+**rECorD** (*Robust Eddy Covariance Data Acquisition*), the eddy covariance raw
+data logger developed at ETH Zurich (Grassland Sciences). This repo does **not**
+log data — it only consumes what rECorD already broadcasts.
+
+Stack: Python 3.12, uv, hatchling, textual + rich, pytest + ruff.
+
+## Architecture
+
+The organising principle: **simulated and live data must travel the same path**,
+so that connecting to a real site is a change of source and nothing else.
+
+```
+simulator.py ─┐
+              ├─> sources.py ──> (stream_name, payload_bytes) ──> codec.py ──> model.py ──> tui/
+multicast  ───┘
+```
+
+| Module | Responsibility |
+|---|---|
+| `codec.py` | `LineAssembler`, the two decoders, `mean(stdev)` / buffer-fill parsing, and `VariableMap` (rECorD's `var_map`, reimplemented) |
+| `simulator.py` | `RecordSimulator` — emits rECorD-format **bytes**, not objects |
+| `sources.py` | `simulated_lines()` / `multicast_lines()`, both yielding `(stream, line)` |
+| `model.py` | `SeriesBuffer`, `StreamHealth`, `LiveState` — rolling state, no I/O |
+| `tui/plot.py` | `render_braille_plot()` → `rich.text.Text`, same shape as bico's |
+| `tui/app.py` | The Textual app; knows only about an async iterator of lines |
+
+Rules that keep the seam honest:
+
+- **The simulator must produce real wire bytes.** A shortcut that yields dicts
+  would let a format mistake hide until the first real connection. Its tests
+  assert on the bytes, including that a sonicshow payload is *not* valid JSON.
+- **Stream names are the routing key**: `"sonicshow"` and `"ga:<analyzer>"`.
+  The app dispatches to the right decoder by name.
+- **No multicast group or port is defaulted anywhere in the package.** They are
+  CLI arguments, or read from the site's `record.toml` via `--record-config`.
+- `sources.open_multicast_socket` is the portable replacement for
+  `udpmulticast.get_multicast_client_socket`, which cannot run on Windows. It is
+  covered by a real loopback round-trip test in `tests/test_sources.py`.
+
+The gas analyzer path applies the site's `var_map`, so the plotted variable is
+named the way the site names it (`CO2` for a mixing ratio in umol mol-1). The
+sonic `var_map` is applied to sonicshow's *raw* keys, which is how `Wc1/Wc2/Wc3`
+get displayed as `U/V/W`.
+
+Layout is intentionally frugal, and should stay that way: no borders, no
+margins between the plots, and no separate readout panels. Each stream is one
+`StreamPanel` that draws a single header line (current values, legend, and the
+rule that separates it from the plot above) followed by braille rows. Borders
+would cost four rows of plot for decoration. The header degrades by dropping
+parts — units first, then metadata — instead of wrapping.
+
+Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
+Avoid `print()` inside a `run_test` block — Textual routes it through a cp1252
+stream on Windows and non-ASCII output raises. For the same reason, user-facing
+unit strings stay ASCII (`m s-1`, `umol mol-1`), matching rECorD's own notation.
+
+## Reference sources
+
+Everything below was derived from reading the source of rECorD and its two
+in-house dependencies:
+
+| Package | Version | What it does |
+|---|---|---|
+| `record` | 0.4.16 | The acquisition program itself |
+| `pygl` | 0.9.5 | `Datafile` (TOA5/ICOS writing), logging helpers |
+| `udpmulticast` | 0.1.26 | UDP multicast socket helpers |
+
+All three are poetry projects published to an institution-internal package
+index, **not to PyPI**. This project therefore cannot import `record` and must
+reimplement the small amount of client logic it needs (multicast subscribe +
+parse).
+
+Local read-only snapshots of all three are kept outside this repo, under a
+`references/` directory in the project's data folder; ask the maintainer for the
+location. Line references below (e.g. `record/utils.py:826`) point into those
+snapshots.
+
+## How rECorD works
+
+`record` is a single asyncio process, started as
+`record <SonicType> <global_config.toml>`. Its main loop (`BaseReader.start`,
+`record/utils.py:826`) is driven by the **sonic**, which is the clock:
+
+1. Block on the first byte from the sonic serial port — this byte's arrival is
+   the record timestamp.
+2. While the rest of the sonic line trickles into the UART buffer, do async work
+   concurrently: read gas-analyzer (GA) UDP sockets, and write the *previous*
+   record to the data file.
+3. Read + parse the rest of the sonic line, push it into a record buffer
+   (deque, default 200 records).
+4. Once per second, broadcast a summary on the *sonicshow* multicast socket.
+
+Key structural points:
+
+- **Sonic**: serial, `record/sonics.py`. `GillHS50` and `GillR3_50` are
+  implemented (`GillR3_50` only differs in `recnum_max`). Both ASCII and binary
+  Gill formats are parsed; the output format is auto-detected in `Sonic.find()`.
+  Sampling frequency is hard-coded to 20 Hz (`Sonic.__init__` default
+  `sampling_freq=20`) and never read from the TOML.
+- **Gas analyzers**: never talk to rECorD directly over serial/TCP. A separate
+  process (subclass of `BaseAnalyzer`, `record/ga_utils.py:15`) owns the
+  instrument and republishes each record as **one JSON object per line** on a
+  UDP multicast group. rECorD subscribes to that group. This is the
+  inter-process boundary and the reason UDP multicast is a hard dependency.
+- **Record alignment**: `GasAnalyzer` (`record/utils.py:85`) keeps a deque the
+  same length as the sonic buffer and sorts async GA records into slots aligned
+  to sonic records, handling jitter, bursts after network glitches, and GA
+  frequencies above/below the sonic's. Every written GA record carries a status
+  bitfield (see below).
+- **Output**: TOA5 (or ICOS) CSV written by `pygl.Datafile`, flushed every 100
+  records, rolled over per `option` (`"daily"` or `"ec.N"` = N half hours), and
+  gzipped in a subprocess on rollover. Line 4 of the TOA5 header is misused to
+  tag each column with its source device, e.g. `[GillHS50]`, `[LI7500RS]`
+  (`record/record.py:97`). See "Data files" below for the details.
+
+## Transport: UDP multicast
+
+All of rECorD's live streams go through `udpmulticast`. Two facts dominate the
+design of this project:
+
+- **The streams do not leave the host.** `get_multicast_server_socket`
+  (`udpmulticast/server.py:10`) defaults to `ttl=0` — "does not leave the local
+  host" — with `IP_MULTICAST_LOOP=1`, and binds to `127.0.0.1` everywhere
+  rECorD uses it. So **the visualizer must run on the same machine as rECorD**,
+  unless the site reconfigures. There is a convention for that, visible in
+  `udpsend.py`: one well-known group means localhost and binds to `127.0.0.1`,
+  another means LAN and binds to a real NIC address. `BaseAnalyzer` takes
+  `multicast_bind_ip` and `ttl` as parameters, so an analyzer *can* be published
+  on the LAN; `BaseReader`'s sonicshow socket hardcodes `127.0.0.1` and the
+  default TTL.
+- **The client socket recipe is Linux-only.** `get_multicast_client_socket`
+  (`udpmulticast/client.py:11`) sets `SO_REUSEPORT` and binds to the *multicast
+  group address*. `SO_REUSEPORT` does not exist in Python on Windows, and
+  Windows requires binding to `INADDR_ANY` rather than the group. Our client
+  must use `SO_REUSEADDR` + bind `('', port)` on Windows, then join the group
+  via `IP_ADD_MEMBERSHIP` with `struct.pack("4sl", inet_aton(group),
+  INADDR_ANY)`. Do not copy the upstream function verbatim.
+
+On Linux the loopback interface also needs a multicast route
+(`224.0.0.0/4 dev lo`, plus `ip link set multicast on lo`) — see the
+`udpmulticast` README. If nothing arrives on a machine that is definitely
+running rECorD, check this first.
+
+**Do not write concrete multicast groups or ports into this repo.** They are
+omitted on purpose. The defaults live in rECorD's source (`sonicshow_ip` /
+`sonicshow_port`, `analyzershow_ip` / `analyzershow_port`) and the site's real
+values live in its `record.toml`. Code should read them from config with the
+upstream defaults as fallback, not hardcode them; if a default is needed at
+runtime, source it from the site config rather than restating it in
+documentation.
+
+Framing is newline (`b'\n'`) delimited, and messages can exceed one datagram, so
+a reader must accumulate until it sees a separator rather than treating each
+datagram as a record (`MulticastProtocol.datagram_received`,
+`udpmulticast/common.py:26`).
+
+## Data sources available to this visualizer
+
+Ordered by usefulness. Sources 1 and 2 are what a TUI would normally consume.
+
+### 1. `sonicshow` — 1 Hz sonic + system summary
+
+- Multicast group and port come from the `sonicshow_ip` / `sonicshow_port`
+  defaults in `BaseReader.__init__` (`record/utils.py:653`); the `sonicshow` CLI
+  repeats them as its `-g` / `-p` defaults. One message per `sonicshow_interval`
+  (1 s), newline-terminated.
+- **The payload is a Python dict `repr()`, not JSON** — it is built as
+  `f"{sonicshow_dict}\n".encode()` (`record/utils.py:933`), so it uses single
+  quotes. Parse with `ast.literal_eval`, never `json.loads`.
+- Reference consumer: the `sonicshow` CLI → `DeviceShow` (`record/utils.py:987`),
+  which just prints each datagram.
+- Keys, from `GillHS50.compose_sonicshow_info` (`record/sonics.py:500`),
+  aggregated over the records of the last interval:
+
+  | key | meaning | type |
+  |---|---|---|
+  | `Wc1`, `Wc2`, `Wc3` | wind components u, v, w | `"mean(stdev)"` string, 2 decimals |
+  | `SOS` | speed of sound / sonic temperature (K or °C per `SOSREP`) | same |
+  | `PRT` | absolute temperature, only if `ABSTEMP` is on | same |
+  | `Error` | sonic error code — `StaD` of a record where `StaA == 0` | int |
+  | `IncX`, `IncY` | inclinometer, degrees (raw × 0.01) | float |
+  | `Gain` | `StaD` of a record where `StaA == 5` | int |
+
+  Plus, added by `BaseReader.start` (`record/utils.py:927`):
+
+  | key | meaning |
+  |---|---|
+  | `sonic_buffer` | `"used/max"` string, sonic record buffer fill |
+  | `<ga>_freq` | estimated GA sampling frequency in Hz, 1 decimal |
+  | `<ga>_buffer` | `"used/max"` string, that GA's record buffer fill |
+
+  `<ga>` is the analyzer's config key, e.g. `li7500rs_freq`.
+
+  Note the mean/stdev strings are pre-formatted text, so the visualizer has to
+  re-parse them if it wants numbers for plotting.
+
+### 2. `analyzershow` — ~1 Hz gas analyzer summary
+
+- Group and port from the `analyzershow_ip` / `analyzershow_port` defaults in
+  `BaseAnalyzer.__init__` (`record/ga_utils.py:19`) — same group as sonicshow,
+  the next port up.
+- Also a Python dict `repr()`, same parsing caveat.
+- Contents are per-analyzer and configured via `analyzershow_variables`, a
+  `{variable: aggregation}` mapping, where aggregation is `avg` (rendered
+  `"mean(stdev)"` in `.2e` notation), `smp` (last value), `max`, or `min`
+  (`BaseAnalyzer.aggregate_list`, `record/ga_utils.py:113`).
+- Produced by the *analyzer* process, not by rECorD. It only exists if the site
+  runs a `BaseAnalyzer` subclass.
+
+### 3. Raw GA stream — full rate, real JSON
+
+- The GA's own multicast group/port, taken from the `ip` and `port` keys of the
+  site's `[gasanalyzers.<name>]` section. Not a code default — it is per site.
+- One `json.dumps` object per line at the analyzer's rate (~20 Hz) — this is
+  genuine JSON (`record/ga_utils.py:268` and `:296`).
+- Structure is nested and analyzer-specific; the config's `var_map` describes
+  the path, e.g. `var_map.Data.CO2D = "CO2_CONC"` → `{"Data": {"CO2D": ...}}`.
+  Buffered records get an extra `{"Auxiliary": {"BufferSize": n}}`.
+- **This is the only high-rate stream on the network.** rECorD exports no
+  high-rate sonic stream — wind data is only available at 1 Hz via sonicshow,
+  or at full rate by tailing the data file.
+
+### 4. Data files
+
+The fallback for full-rate sonic data: tail the file rECorD is currently
+writing. Details, all from `pygl/pygl.py`:
+
+- **Location is flat.** `Datafile._compose_filepath` (`pygl/pygl.py:159`) only
+  applies date directories and `subdir` when `archive_dirs` is true — and
+  `record.py` never passes `archive_dirs`, so it stays `False`. The `date_dirs=True`
+  and `subdir=ec_setup_dir` that `record.py` does pass are therefore **ignored**,
+  and files land directly in `workingdir` = `[datafile].root_dir`, defaulting to
+  `/home/data/<hostname>`.
+- **Filename**: `<SITE>_<type>_<timestamp><ending>`, e.g. `ECDA_ec_20260726-1430.dat`.
+  `<SITE>` comes from `get_site()` (`pygl/pygl.py:469`): the hostname truncated
+  at `-idaq`, uppercased. The timestamp is `YYYYMMDD` for `option="daily"` and
+  `YYYYMMDD-HHMM` for `option="ec.N"`.
+- **There is no TIMESTAMP column.** `BaseReader.write_to_file` calls
+  `_prepare_data_string(None, ...)` (`record/utils.py:786`) — passing `None` as
+  the time — and the site's `variables` list contains no `TIMESTAMP`. Record
+  timing must be reconstructed from the filename plus the fixed 20 Hz rate.
+  Anything derived this way drifts; do not present it as an exact timestamp.
+- **Format**: comma-separated, `\r\n` line endings. Missing values are the
+  literal `"NAN"` *including the quotes* for TOA5 (`"NaN"` for ICOS). Non-numeric
+  values are double-quoted, numbers are not.
+- **TOA5 header**, 4 lines, all fields double-quoted (`pygl/pygl.py:349`):
+  1. `"TOA5",<hostname>,<platform.machine()>,<empty serial>,<platform.platform()>,<program path>,<rECorD version>,<table name>`
+  2. variable names
+  3. units
+  4. device tags — `[GillHS50]`, `[LI7500RS]`, … (this is the "aggregations"
+     line, repurposed)
+
+  ICOS has a single header line of quoted variable names and no units.
+- Rollover: at midnight (`daily`) or the next N×30-minute boundary (`ec.N`), the
+  old file is gzipped in a separate process and the original deleted. A file
+  that vanishes and reappears as `.gz` is normal rollover, not an error.
+
+## Status and diagnostic codes
+
+**GA status bitfield** — `<GA>_STATUS` column in the data file, constants in
+`GasAnalyzer` (`record/utils.py:89`):
+
+| bit | name | meaning |
+|---|---|---|
+| `0x80` | `NO_RECENT_DATA` | no record from the analyzer for this sonic record |
+| `0x20` | `DATA_REPEATED` | last valid record copied forward (up to `max_rep`, then NaN) |
+| `0x10` | `NO_GA_RESPONSE` | analyzer not responding |
+| `0x08` | `DATA_DISCARDED` | at least one record was dropped to stay aligned |
+| `0x04` | `DATA_BUFFERED` | record was time-sorted into the buffer, not taken live |
+| `0x01` | `JSON_ERROR` | JSON parse failure |
+
+These are *not* in sonicshow — only in the data file.
+
+**Sonic `StaA` / `StaD`** (Gill): `StaA` doubles as the record counter, cycling
+`1..recnum_max` (10 for HS-50, 6 for R3-50), and as an address selecting what
+`StaD` means. `StaA == 0` → instrument error, `StaD` is the error code.
+`StaA == 5` → gain. `StaA == 7..10` → inclinometer X/Y high/low bytes. A break
+in the `StaA` sequence means a lost record and triggers a full restart of the
+reader (`RuntimeWarning` → `try_restart`, `record/utils.py:740`).
+
+## Configuration files (TOML)
+
+Two files, both needed to interpret a live stream:
+
+- **Global** (`data/record.toml`): `[datafile]` (`variables`, `units`, `format`,
+  `option`, `type`, `ending`, optional `multiplier`/`offset` per variable),
+  `[sonic]` (`device`, `baud`, `line_ending`, `var_map`, `recnum_var`,
+  `full_config`), and `[gasanalyzers.<name>]` (`ip`, `port`, `var_map`,
+  `status_var`, `max_rep`, `max_jitter_buffer`, optional `timestamp.*`).
+- **Sonic** (`data/gillHS50.toml`): flat key/value pairs pushed verbatim into
+  the instrument (Gill command names, uppercased).
+
+`var_map` maps *raw instrument variable → data-file variable*, and may be
+nested to mirror a nested JSON stream. `VariableMapping` (`record/utils.py:29`)
+flattens it. If the visualizer wants to label GA values meaningfully, it needs
+the same config.
+
+## Known issues in the reference source
+
+Relevant because they affect what we can rely on:
+
+- `record.py` offers `Metek_uSonic3` as a CLI choice, but no such class exists
+  in `record/sonics.py` — selecting it raises `AttributeError`. Only the two
+  Gill sonics actually work, despite `data/metek.toml` existing.
+- The example `data/record.toml` writes flat `use_timestamp` / `timestamp_var`
+  keys, but `record.py:176` reads a nested `[gasanalyzers.<name>.timestamp]`
+  table with `use` / `var` / `format` / `factor`. The example is stale; the
+  README's nested form is authoritative.
+- Timestamp-based buffering logs "provisional and not tested in this version".
+- `fileformat = "ICOS"` cannot work from rECorD: `Datafile` builds ICOS
+  filenames from `kwargs['logger_id']` and `kwargs['datafile_id']`
+  (`pygl/pygl.py:98`), and `record.py` passes neither → `KeyError`. Only TOA5 is
+  usable in practice.
+- `Datafile._compose_filename` and `_compose_filepath` use
+  `current_time=datetime.now()` as a *default argument*, evaluated once at
+  import. The initial filename is therefore stamped at import time; rECorD
+  papers over this by calling `new_file(..., force=True)` at startup.
+- `get_site()` does `hostname[:hostname.find('-idaq')]`. On a host whose name
+  does not contain `-idaq`, `find` returns `-1` and the last character of the
+  hostname is silently chopped off.
+- `_prepare_data_string` catches `KeyError` around building the line but then
+  falls through to `outstr += "\r\n"`, which would raise `UnboundLocalError`.
+  Unreachable in practice, since `_parse_variable` handles missing keys itself.
+
+## Implications for this project
+
+- Implement our own multicast subscriber; do not depend on `record`, `pygl`, or
+  `udpmulticast`. Write the socket setup portably — the upstream client recipe
+  does not run on Windows (see "Transport" above).
+- **Deployment is constrained**: with rECorD's defaults (TTL 0, bound to
+  loopback) the live streams are reachable only from the logging host itself.
+  Either the TUI runs there, or it reads data files from a share, or rECorD is
+  reconfigured onto the LAN-scoped multicast group with a non-zero TTL. This is
+  the first design decision to settle.
+- Support two parsers: `ast.literal_eval` for `sonicshow`/`analyzershow`,
+  `json.loads` for raw GA streams. Never assume JSON for the former.
+  Accumulate to a `\n` before parsing.
+- Treat every stream as lossy: UDP, no retransmit, and the sender formats
+  numbers as text. Missing datagrams are normal; show staleness rather than
+  freezing on the last value (`DeviceShow` uses a 1.2 s timeout).
+- Reading the site's `record.toml` is the cleanest way to know which GAs exist,
+  their multicast addresses, and the variable names to display.
+- If tailing data files: no timestamp column exists, files are flat in
+  `root_dir`, and the current file disappears on rollover (gzipped). Detect the
+  new file by name rather than holding a file handle.
+
+## Conventions in this repo
+
+Mirrors the sibling project `F:\dev\diive`: hatchling, GPL-3.0, ruff with
+`line-length = 110` and `select = ["E4", "E7", "E9", "F", "B"]`, dependencies
+pinned with lower bounds, `uv.lock` committed.
+
+```bash
+uv sync
+```
+
+```bash
+uv run pytest -q && uv run ruff check .
+```
