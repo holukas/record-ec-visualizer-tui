@@ -74,10 +74,27 @@ Together those took a refresh from ~52 ms/s to ~20 ms/s. When touching this
 path, measure rather than reason: the first guess (that segment drawing
 dominated) was wrong, and a profile said otherwise.
 
-One correctness rule in `model.LiveState.ingest_sonicshow`: every wind
-component gets a sample from every message, `nan` if absent or unparseable.
-The plot maps a sample's *index* to an x position, so a series that skipped an
-entry would render shifted against the others for the rest of the run.
+Two correctness rules follow from the plot's x axis being **sample-indexed**,
+not time-indexed. Both are easy to undo by accident:
+
+- Every wind component gets a sample from every sonicshow message, `nan` if
+  absent or unparseable (`LiveState.ingest_sonicshow`). A series that skipped an
+  entry would render shifted against the others for the rest of the run.
+- A stream that goes silent must still occupy the slots it missed
+  (`SeriesBuffer`, `detect_gaps=True`). Nothing is appended while nothing is
+  arriving, so without this the trace closes over an outage and the axis
+  silently compresses while the header still claims "last 54 s". For EC data a
+  gap is exactly what an operator needs to see.
+
+`SeriesBuffer` *learns* the cadence rather than taking it as configuration: an
+analyzer's rate is a per-site value this package does not hardcode, and the
+stream is the most reliable statement of it. Normal arrivals feed an
+exponential moving average; a late arrival is measured against it, pads
+`round(delta / interval) - 1` slots, and never pollutes the estimate. Use
+`round`, not `int` — an exact 4 s gap at 20 Hz evaluates to 79.999….
+
+Verified end to end: a 4 s analyzer dropout produces 80 `nan` slots and renders
+as a 6-column hole, against 0 blank columns for uninterrupted data.
 
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block — Textual routes it through a cp1252
