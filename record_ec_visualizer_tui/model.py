@@ -44,10 +44,6 @@ class SeriesBuffer:
         return [value for _, value in self._points]
 
     @property
-    def times(self) -> list[float]:
-        return [elapsed for elapsed, _ in self._points]
-
-    @property
     def latest(self) -> float:
         for _, value in reversed(self._points):
             if not math.isnan(value):
@@ -137,31 +133,30 @@ class LiveState:
         self.sonic_health.mark_message()
         self.last_sonic_record = dict(record)
 
+        # Every component gets a sample every message, even a missing one. The
+        # plot maps a sample's *index* to an x position, so letting one series
+        # skip an entry would shift it against the others from then on.
         for key in WIND_RAW_KEYS:
-            if key not in record:
-                continue
-            try:
-                mean, stdev = parse_mean_stdev(record[key])
-            except DecodeError as exc:
-                self.sonic_health.mark_error(str(exc))
-                continue
+            mean: float | None = None
+            stdev: float | None = None
+            if key in record:
+                try:
+                    mean, stdev = parse_mean_stdev(record[key])
+                except DecodeError as exc:
+                    self.sonic_health.mark_error(str(exc))
             self.wind[key].append(elapsed, mean)
             self.wind_stdev[key].append(elapsed, stdev)
 
-        diagnostics: dict[str, Any] = {}
         for key, value in record.items():
             if key in WIND_RAW_KEYS:
                 continue
-            if key.endswith("_buffer") or key == "sonic_buffer":
+            if key.endswith("_buffer"):
                 try:
-                    used, size = parse_buffer_fill(value)
+                    self.diagnostics[key] = parse_buffer_fill(value)
                 except DecodeError:
-                    diagnostics[key] = value
-                else:
-                    diagnostics[key] = (used, size)
+                    self.diagnostics[key] = value
             else:
-                diagnostics[key] = value
-        self.diagnostics.update(diagnostics)
+                self.diagnostics[key] = value
 
     def ingest_ga(self, record: Mapping[str, Any]) -> None:
         """Take one decoded raw gas analyzer record into the rolling state."""
