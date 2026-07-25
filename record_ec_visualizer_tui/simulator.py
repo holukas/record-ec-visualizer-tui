@@ -121,8 +121,6 @@ class RecordSimulator:
         self._records_since_show = 0
         self._sonic_buffer_fill = 0
         self._ndx = 0.0
-        # StaA doubles as the Gill record counter, cycling 1..10.
-        self._staa = 0
 
     @property
     def dt(self) -> float:
@@ -171,7 +169,6 @@ class RecordSimulator:
         sos = 343.0 + 0.6 * self._rng.gauss(0.0, 1.0)
 
         self._tick += 1
-        self._staa = (self._staa % 10) + 1
         self._ndx += self.dt
 
         self._interval_u.append(u)

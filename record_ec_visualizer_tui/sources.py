@@ -105,14 +105,16 @@ class _DatagramCollector(asyncio.DatagramProtocol):
         pass
 
 
-async def simulated_lines(
+def simulated_lines(
     simulator: RecordSimulator | None = None,
     speedup: float = 1.0,
 ) -> AsyncIterator[tuple[str, bytes]]:
-    """Yield rECorD-shaped lines from the simulator, paced in real time."""
-    simulator = simulator or RecordSimulator()
-    async for item in simulator.run(speedup=speedup):
-        yield item
+    """Yield rECorD-shaped lines from the simulator, paced in real time.
+
+    The counterpart to :func:`multicast_lines`, with the same signature shape,
+    so the application can be handed either one.
+    """
+    return (simulator or RecordSimulator()).run(speedup=speedup)
 
 
 async def multicast_lines(

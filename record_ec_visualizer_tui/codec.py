@@ -22,7 +22,7 @@ import ast
 import json
 import math
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 LINE_SEPARATOR = b"\n"
@@ -65,13 +65,6 @@ class LineAssembler:
         *complete, remainder = bytes(self._buffer).split(self._separator)
         self._buffer = bytearray(remainder)
         return [line for line in complete if line.strip()]
-
-    def flush(self) -> bytes:
-        """Return and clear whatever is still buffered."""
-        remainder = bytes(self._buffer)
-        self._buffer.clear()
-        return remainder
-
 
 def parse_show_message(payload: bytes | str) -> dict[str, Any]:
     """Decode a ``sonicshow`` / ``analyzershow`` payload (a Python dict repr)."""
@@ -154,10 +147,6 @@ class VariableMap:
                 self._by_path.setdefault(path, {})[str(key)] = str(value)
                 self.file_vars.append(str(value))
 
-    @property
-    def paths(self) -> list[tuple[str, ...]]:
-        return list(self._by_path)
-
     def file_var_for(self, raw_key: str, path: Sequence[str] = ()) -> str | None:
         """Return the site variable name for a raw key, or ``None`` if unmapped."""
         return self._by_path.get(tuple(path), {}).get(raw_key)
@@ -185,14 +174,3 @@ class VariableMap:
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"VariableMap({self._by_path!r})"
-
-
-def iter_show_numbers(record: Mapping[str, Any]) -> Iterator[tuple[str, float, float]]:
-    """Yield ``(key, mean, stdev)`` for every ``"mean(stdev)"`` entry in a record."""
-    for key, value in record.items():
-        try:
-            mean, stdev = parse_mean_stdev(value)
-        except DecodeError:
-            continue
-        if isinstance(value, str):
-            yield key, mean, stdev
