@@ -23,9 +23,13 @@ from rich.text import Text
 BRAILLE_BASE = 0x2800
 _DOT_BITS = ((0, 1, 2, 6), (3, 4, 5, 7))
 
+#: Bit masks flattened to ``(dot_x & 1) * 4 + (dot_y & 3)``. Setting a dot is
+#: the innermost operation in the renderer — several thousand times per frame —
+#: so it indexes this table instead of calling a helper and shifting.
+_DOT_MASKS = tuple(1 << _DOT_BITS[x][y] for x in (0, 1) for y in (0, 1, 2, 3))
 
-def _bit_for(dot_x: int, dot_y: int) -> int:
-    return _DOT_BITS[dot_x & 1][dot_y & 3]
+#: Every braille cell, precomputed. Cheaper than chr() per cell per frame.
+_BRAILLE_CELLS = tuple(chr(BRAILLE_BASE + value) for value in range(256))
 
 
 def _fmt(value: float) -> str:
@@ -43,18 +47,67 @@ def _fmt(value: float) -> str:
 
 
 def _finite_points(ys: Sequence[Any]) -> list[tuple[int, float]]:
-    """Index/value pairs for the entries that are real numbers."""
+    """Index/value pairs for the entries that are real numbers.
+
+    Series coming from :class:`~record_ec_visualizer_tui.model.SeriesBuffer` are
+    always floats, so that case gets an exact-type fast path; anything else
+    still goes through the general checks.
+    """
     points: list[tuple[int, float]] = []
+    append = points.append
+    isfinite = math.isfinite
     for index, value in enumerate(ys):
-        if value is None or isinstance(value, bool):
+        if type(value) is float:
+            if isfinite(value):
+                append((index, value))
             continue
-        if not isinstance(value, (int, float)):
+        if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
             continue
         as_float = float(value)
-        if math.isnan(as_float) or math.isinf(as_float):
-            continue
-        points.append((index, as_float))
+        if isfinite(as_float):
+            append((index, as_float))
     return points
+
+
+def _decimate(
+    points: list[tuple[int, float]],
+    count: int,
+    dot_cols: int,
+) -> tuple[list[tuple[int, float]], int]:
+    """Reduce dense data to the extremes visible in each dot column.
+
+    A 20 Hz stream easily carries several samples per dot column, and drawing
+    every one of them is wasted work: the column can only show the range they
+    span. Keeping the minimum and maximum per column draws the identical
+    picture — the vertical smear of a dense trace *is* its min/max envelope —
+    for a fraction of the segments. This matters because the visualizer is
+    expected to run on the logging host, where rECorD's own 20 Hz loop is the
+    thing that must not be starved of CPU.
+
+    Returns the reduced points (still in index order) and the sample stride
+    they now represent, so gap detection can be scaled accordingly.
+    """
+    stride = max(1, -(-count // dot_cols))  # ceil
+    extremes: dict[int, tuple[tuple[int, float], tuple[int, float]]] = {}
+    for point in points:
+        column = point[0] // stride
+        current = extremes.get(column)
+        if current is None:
+            extremes[column] = (point, point)
+        else:
+            low, high = current
+            extremes[column] = (
+                point if point[1] < low[1] else low,
+                point if point[1] > high[1] else high,
+            )
+
+    reduced: list[tuple[int, float]] = []
+    for column in sorted(extremes):
+        low, high = extremes[column]
+        reduced.extend((low, high) if low[0] <= high[0] else (high, low))
+        if low is high:
+            reduced.pop()
+    return reduced, stride
 
 
 def _draw_segment(
@@ -138,6 +191,13 @@ def render_braille_plot(
         ys = spec.get("y") or ()
         count = len(ys)
 
+        # Denser than the grid can show: collapse to the per-column envelope.
+        # gap_limit rises with the stride so a dropout still reads as a gap.
+        stride = 1
+        if count > dot_cols:
+            points, stride = _decimate(points, count, dot_cols)
+        gap_limit = max_gap * stride
+
         def to_dot_x(index: int, count: int = count) -> int:
             if count <= 1:
                 return dot_cols - 1
@@ -150,8 +210,8 @@ def render_braille_plot(
         def set_dot(dot_x: int, dot_y: int, color: str | None = color) -> None:
             if not (0 <= dot_x < dot_cols and 0 <= dot_y < dot_rows):
                 return
-            cell_x, cell_y = dot_x // 2, dot_y // 4
-            bits[cell_y][cell_x] |= 1 << _bit_for(dot_x, dot_y)
+            cell_x, cell_y = dot_x >> 1, dot_y >> 2
+            bits[cell_y][cell_x] |= _DOT_MASKS[(dot_x & 1) * 4 + (dot_y & 3)]
             if color is not None:
                 colors[cell_y][cell_x] = color
 
@@ -160,7 +220,7 @@ def render_braille_plot(
             dot_x, dot_y = to_dot_x(index), to_dot_y(value)
             if connect and previous is not None:
                 prev_index, prev_x, prev_y = previous
-                if index - prev_index <= max_gap:
+                if index - prev_index <= gap_limit:
                     _draw_segment(prev_x, prev_y, dot_x, dot_y, set_dot)
                 else:
                     set_dot(dot_x, dot_y)
@@ -176,12 +236,23 @@ def render_braille_plot(
             label = _fmt(low)
         else:
             label = ""
-        out.append(f"{label:>{label_width}} ", style=axis_style)
-        out.append("│", style=axis_style)
+        out.append(f"{label:>{label_width}} │", style=axis_style)
+
+        # Append runs of same-styled cells rather than one call per cell: a
+        # frame is well over a thousand cells, and most of them are blank and
+        # share a style, so this is where the render time actually goes.
+        row_bits = bits[row]
+        row_colors = colors[row]
+        run_style = row_colors[0]
+        run: list[str] = []
         for column in range(width):
-            character = chr(BRAILLE_BASE + bits[row][column])
-            style = colors[row][column]
-            out.append(character, style=style if style else None)
+            style = row_colors[column]
+            if style != run_style:
+                out.append("".join(run), style=run_style or None)
+                run = []
+                run_style = style
+            run.append(_BRAILLE_CELLS[row_bits[column]])
+        out.append("".join(run), style=run_style or None)
         if row < height - 1:
             out.append("\n")
     return out
