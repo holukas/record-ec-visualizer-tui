@@ -1,6 +1,8 @@
 import math
 import time
 
+import pytest
+
 from record_ec_visualizer_tui.codec import VariableMap
 from record_ec_visualizer_tui.model import WIND_RAW_KEYS, LiveState, SeriesBuffer, StreamHealth
 
@@ -36,6 +38,81 @@ class TestSeriesBuffer:
         buffer = SeriesBuffer(4)
         buffer.append(10.0, 1.0)
         assert buffer.span_seconds() == 0.0
+
+
+class TestGapDetection:
+    """An outage must leave a hole, not close up and compress the time axis."""
+
+    @staticmethod
+    def _fill(buffer: SeriesBuffer, count: int, interval: float, start: float = 0.0) -> float:
+        elapsed = start
+        for _ in range(count):
+            buffer.append(elapsed, 1.0)
+            elapsed += interval
+        return elapsed
+
+    def test_learns_the_cadence_from_the_stream(self):
+        # The rate is a per-site setting this package does not hardcode, so it
+        # is inferred from arrivals instead.
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        self._fill(buffer, 200, 0.05)
+        assert buffer.interval == pytest.approx(0.05, rel=1e-6)
+
+    def test_learns_a_slow_cadence_just_as_well(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        self._fill(buffer, 30, 1.0)
+        assert buffer.interval == pytest.approx(1.0, rel=1e-6)
+
+    def test_late_arrival_fills_the_slots_it_missed(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        elapsed = self._fill(buffer, 200, 0.05)
+        buffer.append(elapsed + 4.0 - 0.05, 1.0)  # a 4 s outage at 20 Hz
+        assert sum(1 for value in buffer.values if math.isnan(value)) == 79
+
+    def test_no_padding_for_ordinary_jitter(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        elapsed = self._fill(buffer, 200, 0.05)
+        buffer.append(elapsed + 0.08, 1.0)  # late, but not by much
+        assert not any(math.isnan(value) for value in buffer.values)
+
+    def test_outage_does_not_corrupt_the_cadence_estimate(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        elapsed = self._fill(buffer, 200, 0.05)
+        buffer.append(elapsed + 4.0, 1.0)
+        assert buffer.interval == pytest.approx(0.05, rel=1e-6)
+
+    def test_padding_is_capped_at_the_buffer_length(self):
+        # A machine left running over a weekend outage must not spin.
+        buffer = SeriesBuffer(50, detect_gaps=True)
+        elapsed = self._fill(buffer, 20, 0.05)
+        buffer.append(elapsed + 3600.0, 1.0)
+        assert len(buffer) == 50
+
+    def test_disabled_by_default(self):
+        buffer = SeriesBuffer(2000)
+        elapsed = self._fill(buffer, 200, 0.05)
+        buffer.append(elapsed + 4.0, 1.0)
+        assert not any(math.isnan(value) for value in buffer.values)
+
+    def test_clear_forgets_the_cadence(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        self._fill(buffer, 200, 0.05)
+        buffer.clear()
+        assert buffer.interval is None
+
+    def test_wind_series_stay_aligned_across_a_gap(self):
+        # The three buffers learn independently; they must still pad in step,
+        # or the components would be drawn shifted against each other.
+        state = _state()
+        for second in range(10):
+            state.ingest_sonicshow({key: "1.00(0.10)" for key in WIND_RAW_KEYS})
+            state._start -= 1.0  # advance the clock a second per message
+        state._start -= 6.0  # a six second outage
+        state.ingest_sonicshow({key: "2.00(0.10)" for key in WIND_RAW_KEYS})
+
+        lengths = {key: len(state.wind[key]) for key in WIND_RAW_KEYS}
+        assert len(set(lengths.values())) == 1, f"series drifted apart: {lengths}"
+        assert any(math.isnan(value) for value in state.wind["Wc1"].values)
 
 
 class TestStreamHealth:

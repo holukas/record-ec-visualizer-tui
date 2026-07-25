@@ -28,16 +28,74 @@ WIND_RAW_KEYS = ("Wc1", "Wc2", "Wc3")
 
 
 class SeriesBuffer:
-    """A fixed-length rolling series of ``(elapsed_seconds, value)`` samples."""
+    """A fixed-length rolling series of ``(elapsed_seconds, value)`` samples.
 
-    def __init__(self, maxlen: int) -> None:
+    With ``detect_gaps``, a sample that arrives far later than the established
+    cadence first fills the slots it missed with ``nan``. Without that, an
+    outage would leave no trace at all — nothing is appended while nothing is
+    arriving, so the trace closes over the hole and the plot silently compresses
+    time. For eddy covariance data a gap is exactly the thing worth seeing, so
+    the missing slots are made explicit.
+
+    The cadence is learned rather than configured: an analyzer's rate is a
+    per-site setting this package deliberately does not hardcode, and the
+    stream itself is the most reliable statement of what it is. Normal arrivals
+    feed an exponential moving average; a late one is measured against it and
+    never pollutes it.
+    """
+
+    def __init__(
+        self,
+        maxlen: int,
+        detect_gaps: bool = False,
+        gap_factor: float = 3.0,
+        smoothing: float = 0.2,
+    ) -> None:
+        """
+        :param gap_factor: how many typical intervals late a sample must be
+            before the silence counts as a gap rather than as jitter.
+        :param smoothing: weight of each new interval in the cadence estimate.
+        """
         self._points: deque[tuple[float, float]] = deque(maxlen=maxlen)
+        self._detect_gaps = detect_gaps
+        self._gap_factor = gap_factor
+        self._smoothing = smoothing
+        self._interval: float | None = None
 
     def append(self, elapsed: float, value: float | None) -> None:
+        if self._points:
+            previous = self._points[-1][0]
+            delta = elapsed - previous
+            if delta > 0:
+                if self._interval is None:
+                    self._interval = delta
+                elif delta <= self._interval * self._gap_factor:
+                    self._interval += self._smoothing * (delta - self._interval)
+                elif self._detect_gaps:
+                    self._fill_missed_slots(previous, delta)
         self._points.append((elapsed, math.nan if value is None else float(value)))
+
+    def _fill_missed_slots(self, previous: float, delta: float) -> None:
+        """Append a nan for each sample the stream should have delivered."""
+        interval = self._interval
+        if not interval:  # pragma: no cover - guarded by the caller
+            return
+        # Rounded, not truncated: the ratio is a float estimate, and an exact
+        # four-second gap at 20 Hz evaluates to 79.999... which would drop a
+        # slot. Capped at the buffer length so a long outage cannot spin, and
+        # anything beyond maxlen would be discarded on arrival anyway.
+        missed = min(round(delta / interval) - 1, self._points.maxlen or 0)
+        for step in range(1, missed + 1):
+            self._points.append((previous + step * interval, math.nan))
+
+    @property
+    def interval(self) -> float | None:
+        """The learned inter-arrival time, or ``None`` before two samples."""
+        return self._interval
 
     def clear(self) -> None:
         self._points.clear()
+        self._interval = None
 
     @property
     def values(self) -> list[float]:
@@ -109,9 +167,16 @@ class LiveState:
 
     def __post_init__(self) -> None:
         self._start = time.monotonic()
-        self.wind = {key: SeriesBuffer(self.wind_history) for key in WIND_RAW_KEYS}
-        self.wind_stdev = {key: SeriesBuffer(self.wind_history) for key in WIND_RAW_KEYS}
-        self.gas = SeriesBuffer(self.gas_history)
+        # All three wind buffers see the same arrival times, so they learn the
+        # same cadence and pad identically — the index alignment they rely on
+        # survives a gap.
+        self.wind = {
+            key: SeriesBuffer(self.wind_history, detect_gaps=True) for key in WIND_RAW_KEYS
+        }
+        self.wind_stdev = {
+            key: SeriesBuffer(self.wind_history, detect_gaps=True) for key in WIND_RAW_KEYS
+        }
+        self.gas = SeriesBuffer(self.gas_history, detect_gaps=True)
         self.sonic_health = StreamHealth("sonicshow")
         # The raw analyzer stream runs at ~20 Hz, so it goes stale much sooner.
         self.gas_health = StreamHealth("gas analyzer", stale_after=0.5)
