@@ -105,8 +105,9 @@ rECorD's global `record.toml`.
 
 ## Requirements
 
-- Python 3.12
-- [uv](https://docs.astral.sh/uv/)
+- Python 3.11 or newer (3.11 is the floor because the site config is read with
+  `tomllib`; Debian 12 ships 3.11, which is what the logging hosts run)
+- [uv](https://docs.astral.sh/uv/) for development
 
 This project does not depend on rECorD itself: rECorD and its `pygl` and
 `udpmulticast` dependencies are hosted on an internal package index and are not
@@ -125,6 +126,83 @@ Tests and linting:
 ```bash
 uv run pytest -q && uv run ruff check .
 ```
+
+## Deployment on the logging host
+
+Because rECorD publishes with TTL 0 bound to loopback, the live streams are
+only reachable from the machine rECorD runs on — so this has to be installed
+there. rECorD itself is deployed with [pipx](https://pypa.github.io/pipx/), and
+the same works here.
+
+Install from the repository:
+
+```bash
+pipx install git+https://github.com/holukas/record-ec-visualizer-tui.git
+```
+
+If the host has no outbound network, build a wheel elsewhere and copy it over.
+The wheel is pure Python and about 40 kB:
+
+```bash
+uv build
+```
+
+```bash
+scp dist/record_ec_visualizer_tui-*.whl user@logger:/tmp/
+```
+
+```bash
+pipx install /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+```
+
+If the host's Python is older than 3.11, install with uv instead — it fetches
+its own interpreter and leaves the system Python alone:
+
+```bash
+uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+```
+
+### Check the connection before starting the TUI
+
+`--dump` prints decoded records and nothing else, which separates "the streams
+are not reaching me" from "the display is wrong":
+
+```bash
+record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
+```
+
+The analyzer addresses come from `record.toml`. The sonicshow group and port are
+rECorD code defaults rather than config entries (`sonicshow_ip` / `sonicshow_port`
+in `BaseReader.__init__`), which is why they are passed separately. Once records
+appear, drop `--dump` to start the TUI.
+
+### Running it day to day
+
+```bash
+tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>'
+```
+
+- **tmux or screen**, because a dropped SSH connection would otherwise kill a
+  full-screen app.
+- **`nice`**, because the visualizer shares the machine with rECorD's 20 Hz
+  acquisition loop, which warns as soon as a cycle exceeds 50 ms. Redraw costs
+  roughly 20 ms per second of wall clock, so this is comfortable rather than
+  tight — but the logger's job comes first.
+- **A UTF-8 locale** (`LANG=C.UTF-8` or similar), or the braille plots render as
+  boxes.
+
+### If nothing arrives
+
+Multicast has to be enabled on the loopback interface. This is almost certainly
+already the case, since rECorD receives its own gas analyzer data that way, but
+it is the first thing to check:
+
+```bash
+ip route show | grep 224
+```
+
+That should show a `224.0.0.0/4 dev lo` route. The `udpmulticast` README covers
+adding it, along with `ip link set multicast on lo`.
 
 ## Layout
 

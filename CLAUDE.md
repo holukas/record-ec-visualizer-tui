@@ -9,7 +9,12 @@ A terminal UI (Textual) that visualizes, in real time, the data acquired by
 data logger developed at ETH Zurich (Grassland Sciences). This repo does **not**
 log data — it only consumes what rECorD already broadcasts.
 
-Stack: Python 3.12, uv, hatchling, textual + rich, pytest + ruff.
+Stack: Python 3.11+, uv, hatchling, textual + rich, pytest + ruff. Development
+happens on 3.12 (`.python-version`), but **the supported floor is 3.11 and
+should stay there**: the logging hosts this is deployed to run Debian, which
+ships 3.11, and a higher floor would force a second interpreter onto a machine
+whose real job is acquisition. 3.11 is as low as it can go, because the site
+config is read with `tomllib`. Verified on both ends of the range.
 
 ## Architecture
 
