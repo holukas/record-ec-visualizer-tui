@@ -32,9 +32,20 @@ GAS_COLOR = "bright_green"
 LABEL_WIDTH = 8
 
 #: Below these widths the header sheds its least important parts rather than
-#: wrapping, which would cost a plot row.
+#: wrapping, which would cost a plot row. Each optional part carries its own
+#: threshold, and the thresholds are cumulative by construction: a part is
+#: budgeted the width of everything that outranks it plus its own cost, so
+#: parts disappear one at a time from the least important upwards.
 WIDTH_FOR_META = 72
+#: A panel's units, and any short detail alongside them.
 WIDTH_FOR_EXTRAS = 94
+#: Vertical-wind deviation and TKE — how vigorously the air is mixing, which
+#: outranks the units it is quoted in.
+WIDTH_FOR_TURBULENCE = 88
+#: The wind panel's units and per-component deviations, which sit behind the
+#: turbulence pair and so have to clear both. The last to earn its place: sw
+#: already repeats the third of the three deviations.
+WIDTH_FOR_DEVIATIONS = 116
 
 
 class StreamPanel(Static):
@@ -44,7 +55,7 @@ class StreamPanel(Static):
         self,
         title: str,
         chips: Sequence[tuple[str, str, str]],
-        extras: str,
+        parts: Sequence[tuple[str, int]],
         meta: str,
         series: Sequence[dict[str, object]],
         empty_message: str,
@@ -54,7 +65,7 @@ class StreamPanel(Static):
         # One row goes to the header; the rest is plot.
         plot_height = max(3, self.size.height - 1)
 
-        text = _header_line(title, chips, extras, meta, width)
+        text = _header_line(title, chips, parts, meta, width)
         text.append("\n")
         text.append_text(
             render_braille_plot(
@@ -172,13 +183,22 @@ class VisualizerApp(App[None]):
             deviations = " ".join(
                 _number(state.wind_stdev[key].latest, ".2f") for key in WIND_RAW_KEYS
             )
+            # sw and TKE say how vigorously the air is mixing, which is the
+            # quantity a viewer can act on; the per-component deviations behind
+            # them are the detail. Both come free with every sonicshow message.
+            turbulence = (
+                f"sw {_number(state.sigma_w, '.2f')}  TKE {_number(state.tke, '.2f')}"
+            )
             self._wind_panel.draw(
                 title="wind",
                 chips=[
                     (state.label_for(key), _number(state.wind[key].latest, "6.2f"), WIND_COLORS[key])
                     for key in WIND_RAW_KEYS
                 ],
-                extras=f"m s-1   sd {deviations}",
+                parts=[
+                    (f"m s-1   sd {deviations}", WIDTH_FOR_DEVIATIONS),
+                    (turbulence, WIDTH_FOR_TURBULENCE),
+                ],
                 meta=f"1 Hz sonicshow  ·  last {state.wind[WIND_RAW_KEYS[0]].span_seconds():.0f} s",
                 series=[
                     {"y": state.wind[key].values, "color": WIND_COLORS[key]}
@@ -193,7 +213,7 @@ class VisualizerApp(App[None]):
             self._gas_panel.draw(
                 title="gas",
                 chips=[(state.gas_var, _number(state.gas.latest, "7.2f"), GAS_COLOR)],
-                extras="umol mol-1",
+                parts=[("umol mol-1", WIDTH_FOR_EXTRAS)],
                 meta=f"analyzer stream  ·  last {state.gas.span_seconds():.0f} s",
                 series=[{"y": state.gas.values, "color": GAS_COLOR}],
                 empty_message="waiting for analyzer records",
@@ -216,22 +236,25 @@ class VisualizerApp(App[None]):
 def _header_line(
     title: str,
     chips: Sequence[tuple[str, str, str]],
-    extras: str,
+    parts: Sequence[tuple[str, int]],
     meta: str,
     width: int,
 ) -> Text:
     """Title, live values, and a rule filling out to right-aligned metadata.
 
     Parts are dropped from least to most important as the terminal narrows, so
-    the header never wraps onto a second row.
+    the header never wraps onto a second row. Each is a ``(text, min_width)``
+    pair and is written in the order given; a part whose threshold is not met is
+    left out and the ones that outrank it close up around the hole.
     """
     text = Text()
     text.append(f"{title} ", style="bold grey85")
     for label, value, color in chips:
         text.append(f" {label} ", style=f"bold {color}")
         text.append(value, style=color)
-    if extras and width >= WIDTH_FOR_EXTRAS:
-        text.append(f"  {extras}", style="grey50")
+    for part, min_width in parts:
+        if part and width >= min_width:
+            text.append(f"  {part}", style="grey50")
 
     if not meta or width < WIDTH_FOR_META:
         text.append(" " + "─" * max(1, width - text.cell_len - 1), style="grey35")

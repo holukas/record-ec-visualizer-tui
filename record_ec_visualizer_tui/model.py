@@ -192,6 +192,44 @@ class LiveState:
         """Site variable name for a raw sonic key, falling back to the raw key."""
         return self.sonic_map.file_var_for(raw_key) or raw_key
 
+    @property
+    def sigma_w(self) -> float:
+        """Standard deviation of the vertical wind, m s-1.
+
+        The most direct statement of how vigorously the air is mixing, and it
+        arrives ready-made: sonicshow already reports each component as
+        ``mean(stdev)``, so nothing is computed here beyond a lookup.
+        """
+        return self.wind_stdev[WIND_RAW_KEYS[2]].latest
+
+    @property
+    def tke(self) -> float:
+        """Turbulent kinetic energy per unit mass, m2 s-2.
+
+        ``0.5 * (su^2 + sv^2 + sw^2)`` over whatever interval the deviations
+        cover, which for sonicshow is one second of 20 samples.
+
+        **That interval is the caveat.** A one-second window sees only the
+        fastest eddies; the low-frequency contribution that a 30-minute flux
+        averaging period would include is missing, so this reads low against a
+        properly computed TKE. It tracks the right quantity and moves the right
+        way, which is what a live display is for — it is not a flux-grade
+        number, and nothing downstream should treat it as one.
+
+        ``nan`` until all three components have been seen, rather than a total
+        quietly computed from two of them. After that it follows the same
+        last-known-value rule as the header's readouts: a component that stops
+        arriving keeps contributing its last deviation instead of erasing the
+        total.
+        """
+        total = 0.0
+        for key in WIND_RAW_KEYS:
+            deviation = self.wind_stdev[key].latest
+            if math.isnan(deviation):
+                return math.nan
+            total += deviation * deviation
+        return 0.5 * total
+
     def ingest_sonicshow(self, record: Mapping[str, Any]) -> None:
         """Take one decoded sonicshow message into the rolling state."""
         elapsed = self.elapsed

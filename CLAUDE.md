@@ -65,7 +65,23 @@ margins between the plots, and no separate readout panels. Each stream is one
 `StreamPanel` that draws a single header line (current values, legend, and the
 rule that separates it from the plot above) followed by braille rows. Borders
 would cost four rows of plot for decoration. The header degrades by dropping
-parts — units first, then metadata — instead of wrapping.
+parts instead of wrapping: each optional part is a `(text, min_width)` pair and
+carries its own threshold, and the thresholds are cumulative by construction —
+a part is budgeted the width of everything that outranks it plus its own cost.
+Ranking, least important first: units, then per-component deviations, then
+`sw`/`TKE`, then the metadata. Adding a part means recomputing the thresholds
+of everything below it, or the header wraps and costs a plot row;
+`TestHeaderDegradation` in `tests/test_app.py` asserts it fits at every width
+down to the point where the value chips alone no longer do.
+
+`LiveState.sigma_w` and `LiveState.tke` are derived from data already in hand —
+sonicshow reports each component as `mean(stdev)`, so TKE is one multiply-add
+over three numbers the parser has already produced. **The averaging interval is
+the caveat and belongs on any label that quotes them**: one second of 20
+samples captures only the fastest eddies, so both read low against properly
+computed values (the demo's configured `sigma_w = 0.28` displays as ~0.14).
+They are a live indicator of mixing, not flux-grade quantities. TKE stays `nan`
+until all three components have been seen rather than totalling two of three.
 
 **Render cost is a real constraint, not a micro-optimisation.** The intended
 deployment is the logging host, where rECorD's 20 Hz loop warns as soon as a

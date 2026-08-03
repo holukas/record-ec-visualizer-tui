@@ -30,7 +30,7 @@ uv run python examples/demo_simulated.py
 ```
 
 ```
-wind  U   2.15 V   0.08 W   0.21  m s-1   sd 0.40 0.32 0.24 ──── 1 Hz sonicshow  ·  last 180 s
+wind  U   2.15 V   0.08 W   0.21  sw 0.24  TKE 0.31 ──────────── 1 Hz sonicshow  ·  last 180 s
     3.82 │⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠊⠢⡀⠀⠀⠀⠀⠀⠀⠀
          │⣀⠀⠀⠀⠀⢀⣀⣀⣀⡀⠀⠀⣀⡠⠤⠤⠤⠤⠤⣀⣀⡠⠔⠒⠉⠑⠒⠢⠤⣀⠀⠀⢀⣀⠀⠀⠀⡠⠔⠒⠊⠉⠒⠒⠤⢄⣀⣀⡠⠤⠔⠁⠀⠈⠢
    -0.60 │⠀⠉⠉⠒⠒⠒⠊⠉⠁⠀⠈⠉⠑⠒⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠒⠊⠉⠁⠉⠒⠢⠔⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠒
@@ -48,6 +48,15 @@ carries its current values, doubles as the legend (component names are drawn in
 their series colour) and separates the two plots, so nearly all the terminal
 height goes to data. The header sheds its units, then its metadata, as the
 window narrows, rather than wrapping and costing a plot row.
+
+`sw` and `TKE` are how vigorously the air is mixing: the standard deviation of
+the vertical wind, and the turbulent kinetic energy `0.5·(σu²+σv²+σw²)`. Both
+come free with every `sonicshow` message, which already reports each component
+as `mean(stdev)`. Read them as a live indicator, not as a measurement: the
+deviations cover one second, so they miss the low-frequency eddies a 30-minute
+flux averaging period would include and consistently read low — against the
+demo's own configured `sigma_w` of 0.28, the panel shows about half that. On a
+wider terminal the per-component deviations appear behind them.
 
 To see the data itself rather than watch it — the raw bytes of both streams next
 to what they decode to, which is what you would compare against a real site:
