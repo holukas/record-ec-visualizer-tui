@@ -72,7 +72,7 @@ the line source differs — so connecting to a site is a matter of arguments, no
 code:
 
 ```bash
-uv run record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>
+uv run record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port>
 ```
 
 `--record-config` reads the site's rECorD TOML for the analyzer addresses and
@@ -81,7 +81,7 @@ sonicshow address is a rECorD code default rather than a config entry, so it is
 passed separately. To check a connection before opening the TUI:
 
 ```bash
-uv run record-ec-visualizer-tui --record-config /var/local/record.toml --dump
+uv run record-ec-visualizer-tui --record-config /path/to/record.toml --dump
 ```
 
 ## What it reads
@@ -179,7 +179,7 @@ uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.w
 are not reaching me" from "the display is wrong":
 
 ```bash
-record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
+record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
 ```
 
 The analyzer addresses come from `record.toml`. The sonicshow group and port are
@@ -190,9 +190,15 @@ appear, drop `--dump` to start the TUI.
 ### Running it day to day
 
 ```bash
-tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>'
+tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port>'
 ```
 
+- **The same user account rECorD runs under.** The socket sets `SO_REUSEPORT`
+  so it can share the port with rECorD's own subscriber, and Linux only lets
+  sockets share a port that way when they have the same effective UID — an
+  anti-hijacking rule. From another account the bind fails at startup with
+  `OSError: [Errno 98] Address already in use`, which reads like a
+  configuration mistake rather than a permissions one.
 - **tmux or screen**, because a dropped SSH connection would otherwise kill a
   full-screen app.
 - **`nice`**, because the visualizer shares the machine with rECorD's 20 Hz
@@ -214,6 +220,15 @@ ip route show | grep 224
 
 That should show a `224.0.0.0/4 dev lo` route. The `udpmulticast` README covers
 adding it, along with `ip link set multicast on lo`.
+
+If the route is there and the process still sits silent, name the interface
+explicitly. `--interface` defaults to `0.0.0.0`, which leaves the choice of
+interface to join on to the kernel; on a host with a real NIC as well as
+loopback that choice can go the other way, and these streams are loopback-only:
+
+```bash
+record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --interface 127.0.0.1 --dump
+```
 
 ## Layout
 
