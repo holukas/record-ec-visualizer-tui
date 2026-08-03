@@ -3,7 +3,7 @@
 No TUI — this is the one to run when you want to *see* the data rather than
 watch it. It is also the thing to diff against a real installation: run
 
-    record-ec-visualizer-tui --source multicast ... --dump
+    record-ec-visualizer-tui ... --dump
 
 on the logging host and the decoded records should look like these.
 

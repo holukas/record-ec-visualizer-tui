@@ -17,11 +17,13 @@ The live multicast path is implemented and tested, but has not yet been run
 against a real site.
 
 ```bash
-uv run record-ec-visualizer-tui
+uv run record-ec-visualizer-tui --demo
 ```
 
-That starts the demo — no rECorD, no configuration, no network needed. The same
-thing as a plain script, if you would rather run it from an editor:
+That starts the demo — no rECorD, no configuration, no network needed. Without
+`--demo` the command expects a live site, so that on the logging host the bare
+invocation never quietly shows invented data. The same thing as a plain script,
+if you would rather run it from an editor:
 
 ```bash
 uv run python examples/demo_simulated.py
@@ -61,7 +63,7 @@ the line source differs — so connecting to a site is a matter of arguments, no
 code:
 
 ```bash
-uv run record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>
+uv run record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>
 ```
 
 `--record-config` reads the site's rECorD TOML for the analyzer addresses and
@@ -70,7 +72,7 @@ sonicshow address is a rECorD code default rather than a config entry, so it is
 passed separately. To check a connection before opening the TUI:
 
 ```bash
-uv run record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --dump
+uv run record-ec-visualizer-tui --record-config /var/local/record.toml --dump
 ```
 
 ## What it reads
@@ -168,7 +170,7 @@ uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.w
 are not reaching me" from "the display is wrong":
 
 ```bash
-record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
+record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
 ```
 
 The analyzer addresses come from `record.toml`. The sonicshow group and port are
@@ -179,7 +181,7 @@ appear, drop `--dump` to start the TUI.
 ### Running it day to day
 
 ```bash
-tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --source multicast --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>'
+tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /var/local/record.toml --sonicshow-group <group> --sonicshow-port <port>'
 ```
 
 - **tmux or screen**, because a dropped SSH connection would otherwise kill a

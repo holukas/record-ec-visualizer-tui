@@ -2,16 +2,18 @@
 
 Two sources, one application:
 
-``--source simulated`` (the default)
-    Generates rECorD-shaped stream lines locally. Nothing else is needed, and
-    the data travels the same decode path as a live site.
-
-``--source multicast``
+live multicast (the default)
     Subscribes to real rECorD multicast streams. Addresses are required
     arguments — there are deliberately no defaults in this package. rECorD's
     own defaults live in its source (``sonicshow_ip`` / ``sonicshow_port``) and
     the analyzer addresses live in the site's ``record.toml``, which
     ``--record-config`` will read for you.
+
+``--demo``
+    Generates rECorD-shaped stream lines locally. Nothing else is needed, and
+    the data travels the same decode path as a live site. It has to be asked
+    for: on the logging host the bare command should mean "show me the site",
+    not "show me invented numbers that look just like it".
 
 Remember that rECorD publishes these streams with TTL 0 bound to loopback, so
 unless the site has been reconfigured this has to run on the logging host.
@@ -45,10 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
-        "--source",
-        choices=("simulated", "multicast"),
-        default="simulated",
-        help="where stream lines come from (default: simulated)",
+        "--demo",
+        action="store_true",
+        help="feed the display from the built-in simulator instead of a live site",
     )
     parser.add_argument(
         "--dump",
@@ -61,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="site variable to plot from the analyzer stream (default: CO2, a mixing ratio)",
     )
 
-    simulated = parser.add_argument_group("simulated source")
+    simulated = parser.add_argument_group("demo source (--demo)")
     simulated.add_argument("--seed", type=int, default=0, help="RNG seed (default: 0)")
     simulated.add_argument(
         "--speedup",
@@ -79,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not simulate periodic analyzer dropouts",
     )
 
-    live = parser.add_argument_group("multicast source")
+    live = parser.add_argument_group("live multicast source (the default)")
     live.add_argument("--sonicshow-group", help="multicast group of rECorD's sonicshow stream")
     live.add_argument("--sonicshow-port", type=int, help="UDP port of rECorD's sonicshow stream")
     live.add_argument(
@@ -154,7 +155,7 @@ def _build_multicast(
     if not endpoints:
         parser.error(
             "no streams to subscribe to: pass --sonicshow-group/--sonicshow-port "
-            "and/or --record-config"
+            "and/or --record-config, or --demo to run against the simulator"
         )
 
     state = LiveState(gas_var=args.gas_var, sonic_map=sonic_map, gas_map=gas_map)
@@ -173,11 +174,38 @@ async def _dump(lines: AsyncIterator[tuple[str, bytes]]) -> None:
             print(f"[{name}] {record}")
 
 
+def _reject_crossed_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Refuse options belonging to the source that was not selected.
+
+    Silently ignoring them would be the worse failure: an operator who asked for
+    a live site and mistyped an address deserves to hear about it rather than
+    watch a plausible-looking simulation.
+    """
+    demo_only = ["--seed", "--speedup", "--no-dropouts"]
+    live_only = ["--sonicshow-group", "--sonicshow-port", "--record-config", "--analyzer", "--interface"]
+    owner, options = ("the live multicast source", live_only) if args.demo else ("--demo", demo_only)
+
+    given = {
+        "--seed": args.seed != 0,
+        "--speedup": args.speedup != 1.0,
+        "--no-dropouts": args.no_dropouts,
+        "--sonicshow-group": args.sonicshow_group is not None,
+        "--sonicshow-port": args.sonicshow_port is not None,
+        "--record-config": args.record_config is not None,
+        "--analyzer": bool(args.analyzers),
+        "--interface": args.interface != "0.0.0.0",
+    }
+    offenders = [option for option in options if given[option]]
+    if offenders:
+        parser.error(f"{', '.join(offenders)} only applies to {owner}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _reject_crossed_options(args, parser)
 
-    if args.source == "simulated":
+    if args.demo:
         lines, state, subtitle = _build_simulated(args)
     else:
         lines, state, subtitle = _build_multicast(args, parser)

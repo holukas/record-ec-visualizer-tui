@@ -43,6 +43,12 @@ Rules that keep the seam honest:
   assert on the bytes, including that a sonicshow payload is *not* valid JSON.
 - **Stream names are the routing key**: `"sonicshow"` and `"ga:<analyzer>"`.
   The app dispatches to the right decoder by name.
+- **The simulator is opt-in, behind `--demo`.** Because simulated and live data
+  are indistinguishable downstream, a simulated default would let the bare
+  command on the logging host show convincing invented numbers. Without
+  `--demo` the CLI expects a live site and errors if given no addresses; options
+  belonging to the source that was not selected are rejected rather than
+  ignored, so a mistyped address cannot silently degrade into a demo.
 - **No multicast group or port is defaulted anywhere in the package.** They are
   CLI arguments, or read from the site's `record.toml` via `--record-config`.
 - `sources.open_multicast_socket` is the portable replacement for
