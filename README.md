@@ -69,20 +69,30 @@ uv run python examples/demo_wire_format.py
 
 Simulated and live data go through the *same* decode and display path — only
 the line source differs — so connecting to a site is a matter of arguments, not
-code:
+code. Three of them have to be right:
 
 ```bash
-uv run record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port>
+uv run record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --analyzer <name> --gas-var CO2
 ```
 
-`--record-config` reads the site's rECorD TOML for the analyzer addresses and
-its `var_map`, so plotted values carry the site's own variable names. The
-sonicshow address is a rECorD code default rather than a config entry, so it is
-passed separately. To check a connection before opening the TUI:
+- **The addresses.** `--record-config` reads the site's rECorD TOML for the
+  analyzer addresses and their `var_map`, so plotted values carry the site's own
+  variable names. The sonicshow address is a rECorD *code* default rather than a
+  config entry, which is why it is passed separately.
+- **The variable to plot.** `--gas-var` defaults to `CO2` and has to match the
+  name the site's `var_map` maps *to*, not the analyzer's raw key for it. A
+  wrong name fails quietly in a way worth recognising: records keep arriving and
+  the panel keeps reporting the stream as live, but the trace stays empty,
+  because a record without the plotted variable breaks the line rather than
+  holding the last value.
+- **Which analyzer**, at a site that runs more than one. Without `--analyzer`
+  every analyzer stream is read, and they are all drawn on one trace under the
+  first analyzer's `var_map` — two instruments interleaved into a single line.
+  Name the one you want.
 
-```bash
-uv run record-ec-visualizer-tui --record-config /path/to/record.toml --dump
-```
+Before opening the TUI, confirm the streams are arriving at all with `--dump`,
+which prints decoded records and nothing else — see
+[Check the connection](#check-the-connection-before-starting-the-tui) below.
 
 ## What it reads
 
@@ -184,8 +194,13 @@ record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group 
 
 The analyzer addresses come from `record.toml`. The sonicshow group and port are
 rECorD code defaults rather than config entries (`sonicshow_ip` / `sonicshow_port`
-in `BaseReader.__init__`), which is why they are passed separately. Once records
-appear, drop `--dump` to start the TUI.
+in `BaseReader.__init__`), which is why they are passed separately.
+
+`--dump` also answers the question the TUI cannot: it prints each decoded record
+as a dictionary, so you can read the analyzer's actual variable names off the
+wire and pass the right one as `--gas-var`. Once records from both streams
+appear, drop `--dump` and add `--gas-var` (and `--analyzer`, at a site with more
+than one) to start the TUI.
 
 ### Running it day to day
 
@@ -229,6 +244,14 @@ loopback that choice can go the other way, and these streams are loopback-only:
 ```bash
 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --interface 127.0.0.1 --dump
 ```
+
+It applies to every stream subscribed to, sonicshow and the analyzers alike —
+an interface that reached only some of them would half-cure the silence while
+looking like it had been applied.
+
+If only *one* of the two streams stays silent, the interface is not the problem:
+that points at the address for that stream, since sonicshow's comes from the
+command line and the analyzers' from `record.toml`.
 
 ## Layout
 
