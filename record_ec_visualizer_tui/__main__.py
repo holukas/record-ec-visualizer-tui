@@ -141,7 +141,7 @@ def _build_multicast(
 
     if args.record_config:
         config = _load_record_config(args.record_config)
-        endpoints.extend(endpoints_from_record_config(config, args.analyzers))
+        endpoints.extend(endpoints_from_record_config(config, args.analyzers, args.interface))
         sonic_section = config.get("sonic") or {}
         if isinstance(sonic_section.get("var_map"), dict):
             sonic_map = VariableMap(sonic_section["var_map"])

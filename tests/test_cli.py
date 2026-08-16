@@ -34,6 +34,39 @@ def test_demo_flag_selects_the_simulator():
     asyncio.run(lines.aclose())  # never started; close it rather than leave it to the GC
 
 
+def test_interface_reaches_every_endpoint(tmp_path, monkeypatch):
+    """--interface is the documented cure for silence, so it has to cure all of it.
+
+    Analyzer addresses come from record.toml rather than from the command line,
+    which is how they once came to be built without the interface the operator
+    asked for: sonicshow joined on loopback and the analyzers on whatever the
+    routing table chose. Assert on what the CLI actually hands to the socket
+    layer, since that wiring is the part that broke.
+    """
+    from record_ec_visualizer_tui import __main__ as cli
+
+    captured: list = []
+    monkeypatch.setattr(cli, "multicast_lines", lambda endpoints: captured.extend(endpoints))
+
+    config = tmp_path / "record.toml"
+    config.write_text(
+        "[gasanalyzers.irga]\nip = '239.0.0.1'\nport = 40000\n",
+        encoding="utf-8",
+    )
+    args = cli.build_parser().parse_args(
+        [
+            "--record-config", str(config),
+            "--sonicshow-group", "239.0.0.9",
+            "--sonicshow-port", "40010",
+            "--interface", "127.0.0.1",
+        ]
+    )
+    cli._build_multicast(args, cli.build_parser())
+
+    assert [e.name for e in captured] == ["sonicshow", "ga:irga"]
+    assert {e.interface for e in captured} == {"127.0.0.1"}
+
+
 @pytest.mark.parametrize(
     "argv, expected",
     [
