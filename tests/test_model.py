@@ -188,6 +188,32 @@ class TestSonicshowIngestion:
         assert state.diagnostics["sonic_buffer"] == "weird"
 
 
+class TestTurbulence:
+    """sw and TKE come free with every sonicshow message."""
+
+    def test_tke_sums_the_three_deviations(self):
+        state = _state()
+        state.ingest_sonicshow({"Wc1": "2.50(0.40)", "Wc2": "0.10(0.30)", "Wc3": "0.05(0.20)"})
+        assert state.tke == pytest.approx(0.5 * (0.16 + 0.09 + 0.04))
+        assert state.sigma_w == pytest.approx(0.20)
+
+    def test_no_tke_before_every_component_has_been_seen(self):
+        # Two of three would look like a plausible number and read low.
+        state = _state()
+        state.ingest_sonicshow({"Wc1": "2.50(0.40)", "Wc2": "0.10(0.30)"})
+        assert math.isnan(state.tke)
+        assert math.isnan(state.sigma_w)
+
+    def test_nothing_to_report_before_the_first_message(self):
+        assert math.isnan(_state().tke)
+
+    def test_calmer_air_gives_less_turbulent_energy(self):
+        gusty, calm = _state(), _state()
+        gusty.ingest_sonicshow({"Wc1": "2.50(0.90)", "Wc2": "0.10(0.80)", "Wc3": "0.05(0.60)"})
+        calm.ingest_sonicshow({"Wc1": "2.50(0.09)", "Wc2": "0.10(0.08)", "Wc3": "0.05(0.06)"})
+        assert gusty.tke > calm.tke
+
+
 class TestGasIngestion:
     def test_plots_the_mapped_variable(self):
         state = _state()

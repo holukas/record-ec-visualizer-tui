@@ -151,12 +151,19 @@ async def multicast_lines(
 def endpoints_from_record_config(
     config: dict,
     analyzers: Iterable[str] | None = None,
+    interface: str = "0.0.0.0",
 ) -> list[MulticastEndpoint]:
     """Build analyzer endpoints from a parsed rECorD ``record.toml``.
 
     Only the gas analyzer sections carry addresses; the sonicshow address is a
     rECorD code default and is not present in the site config, so it has to be
     passed separately.
+
+    ``interface`` applies to every endpoint built here. It has to, because the
+    operator naming an interface is troubleshooting *silence*, and these streams
+    are loopback-only: an interface that reached sonicshow but left the analyzers
+    joined on whatever the routing table picked would half-fix the display while
+    looking like it had been applied.
     """
     sections = config.get("gasanalyzers") or {}
     wanted = set(analyzers) if analyzers is not None else None
@@ -167,6 +174,11 @@ def endpoints_from_record_config(
         if not isinstance(section, dict) or "ip" not in section or "port" not in section:
             continue
         endpoints.append(
-            MulticastEndpoint(name=f"ga:{name}", group=str(section["ip"]), port=int(section["port"]))
+            MulticastEndpoint(
+                name=f"ga:{name}",
+                group=str(section["ip"]),
+                port=int(section["port"]),
+                interface=interface,
+            )
         )
     return endpoints

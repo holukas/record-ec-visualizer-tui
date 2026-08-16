@@ -39,6 +39,16 @@ class TestEndpointsFromRecordConfig:
         endpoints = endpoints_from_record_config(config, analyzers=["irga"])
         assert [e.name for e in endpoints] == ["ga:irga"]
 
+    def test_interface_is_applied_to_every_analyzer(self):
+        config = {
+            "gasanalyzers": {
+                "irga": {"ip": "239.0.0.1", "port": 40000},
+                "other": {"ip": "239.0.0.2", "port": 40001},
+            }
+        }
+        endpoints = endpoints_from_record_config(config, interface="127.0.0.1")
+        assert {e.interface for e in endpoints} == {"127.0.0.1"}
+
     def test_missing_section_is_not_an_error(self):
         assert endpoints_from_record_config({}) == []
 
