@@ -191,7 +191,7 @@ uv build
 ```
 
 ```bash
-pip download dist/record_ec_visualizer_tui-0.2.0-py3-none-any.whl -d wheelhouse
+pip download dist/record_ec_visualizer_tui-0.2.1-py3-none-any.whl -d wheelhouse
 ```
 
 ```bash
@@ -199,7 +199,7 @@ scp -r wheelhouse user@logger:/tmp/wheelhouse
 ```
 
 ```bash
-pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.2.0-py3-none-any.whl
+pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.2.1-py3-none-any.whl
 ```
 
 If the host's Python is older than 3.11, install with uv instead. uv downloads
@@ -207,7 +207,7 @@ its own interpreter and leaves the system Python untouched, but the download
 needs network access:
 
 ```bash
-uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.2.0-py3-none-any.whl
+uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.2.1-py3-none-any.whl
 ```
 
 ### Run the demo once
