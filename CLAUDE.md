@@ -4,22 +4,22 @@ Guidance for Claude Code when working in this repository.
 
 ## What this project is
 
-A terminal UI (Textual) that visualizes, in real time, the data acquired by
-**rECorD** (*Robust Eddy Covariance Data Acquisition*), the eddy covariance raw
-data logger developed at ETH Zurich (Grassland Sciences). This repo does **not**
-log data — it only consumes what rECorD already broadcasts.
+A terminal UI (Textual) that plots the data acquired by **rECorD** (*Robust
+Eddy Covariance Data Acquisition*) in real time. rECorD is the eddy covariance
+raw data logger developed at ETH Zurich (Grassland Sciences). This repo does
+**not** log data; it only consumes what rECorD already broadcasts.
 
 Stack: Python 3.11+, uv, hatchling, textual + rich, pytest + ruff. Development
 happens on 3.12 (`.python-version`), but **the supported floor is 3.11 and
 should stay there**: the logging hosts this is deployed to run Debian, which
 ships 3.11, and a higher floor would force a second interpreter onto a machine
-whose real job is acquisition. 3.11 is as low as it can go, because the site
-config is read with `tomllib`. Verified on both ends of the range.
+that is there to do acquisition. 3.11 is also the lower limit, because the site
+config is read with `tomllib`. Both ends of the range are tested.
 
 ## Architecture
 
-The organising principle: **simulated and live data must travel the same path**,
-so that connecting to a real site is a change of source and nothing else.
+**Simulated and live data must travel the same path**, so that connecting to a
+real site is a change of source and nothing else.
 
 ```
 simulator.py ─┐
@@ -36,19 +36,19 @@ multicast  ───┘
 | `tui/plot.py` | `render_braille_plot()` → `rich.text.Text`, same shape as bico's |
 | `tui/app.py` | The Textual app; knows only about an async iterator of lines |
 
-Rules that keep the seam honest:
+Rules that keep the two paths identical:
 
-- **The simulator must produce real wire bytes.** A shortcut that yields dicts
-  would let a format mistake hide until the first real connection. Its tests
+- **The simulator must produce real wire bytes.** If it yielded dicts instead, a
+  format mistake would stay hidden until the first real connection. Its tests
   assert on the bytes, including that a sonicshow payload is *not* valid JSON.
 - **Stream names are the routing key**: `"sonicshow"` and `"ga:<analyzer>"`.
   The app dispatches to the right decoder by name.
-- **The simulator is opt-in, behind `--demo`.** Because simulated and live data
-  are indistinguishable downstream, a simulated default would let the bare
-  command on the logging host show convincing invented numbers. Without
-  `--demo` the CLI expects a live site and errors if given no addresses; options
-  belonging to the source that was not selected are rejected rather than
-  ignored, so a mistyped address cannot silently degrade into a demo.
+- **The simulator is opt-in, behind `--demo`.** Simulated and live data are
+  indistinguishable downstream, so a simulated default would let the bare
+  command on the logging host display invented numbers. Without `--demo` the CLI
+  expects a live site and errors if given no addresses; options belonging to the
+  source that was not selected are rejected rather than ignored, so a mistyped
+  address cannot turn into a demo run.
 - **No multicast group or port is defaulted anywhere in the package.** They are
   CLI arguments, or read from the site's `record.toml` via `--record-config`.
 - `sources.open_multicast_socket` is the portable replacement for
@@ -60,46 +60,46 @@ named the way the site names it (`CO2` for a mixing ratio in umol mol-1). The
 sonic `var_map` is applied to sonicshow's *raw* keys, which is how `Wc1/Wc2/Wc3`
 get displayed as `U/V/W`.
 
-Layout is intentionally frugal, and should stay that way: no borders, no
-margins between the plots, and no separate readout panels. Each stream is one
-`StreamPanel` that draws a single header line (current values, legend, and the
-rule that separates it from the plot above) followed by braille rows. Borders
-would cost four rows of plot for decoration. The header degrades by dropping
-parts instead of wrapping: each optional part is a `(text, min_width)` pair and
-carries its own threshold, and the thresholds are cumulative by construction —
-a part is budgeted the width of everything that outranks it plus its own cost.
+Layout is frugal on purpose and should stay that way: no borders, no margins
+between the plots, no separate readout panels. Each stream is one `StreamPanel`
+that draws a single header line (current values, legend, and the rule that
+separates it from the plot above) followed by braille rows. Borders would cost
+four rows of plot for decoration. The header degrades by dropping parts instead
+of wrapping. Each optional part is a `(text, min_width)` pair and carries its
+own threshold; the thresholds are cumulative by construction, so a part is
+budgeted the width of everything that outranks it plus its own cost.
 Ranking, least important first: units, then per-component deviations, then
 `sw`/`TKE`, then the metadata. Adding a part means recomputing the thresholds
 of everything below it, or the header wraps and costs a plot row;
 `TestHeaderDegradation` in `tests/test_app.py` asserts it fits at every width
 down to the point where the value chips alone no longer do.
 
-`LiveState.sigma_w` and `LiveState.tke` are derived from data already in hand —
-sonicshow reports each component as `mean(stdev)`, so TKE is one multiply-add
-over three numbers the parser has already produced. **The averaging interval is
-the caveat and belongs on any label that quotes them**: one second of 20
-samples captures only the fastest eddies, so both read low against properly
-computed values (the demo's configured `sigma_w = 0.28` displays as ~0.14).
-They are a live indicator of mixing, not flux-grade quantities. TKE stays `nan`
-until all three components have been seen rather than totalling two of three.
+`LiveState.sigma_w` and `LiveState.tke` are computed from data the parser
+already has: sonicshow reports each component as `mean(stdev)`, so TKE is one
+multiply-add over three numbers. **Any label that quotes them must mention the
+averaging interval**: one second of 20 samples captures only the fastest eddies,
+so both read low against properly computed values (the demo's configured
+`sigma_w = 0.28` displays as ~0.14). They are a live indicator of mixing, not
+flux-grade quantities. TKE stays `nan` until all three components have been
+seen, instead of totalling only two.
 
-**Render cost is a real constraint, not a micro-optimisation.** The intended
-deployment is the logging host, where rECorD's 20 Hz loop warns as soon as a
-cycle exceeds 50 ms, so the TUI must stay out of its way. Three things keep it
-cheap, and all three should survive future edits:
+**Render cost is a hard constraint on this project.** The intended deployment
+is the logging host, where rECorD's 20 Hz loop warns as soon as a cycle exceeds
+50 ms, so the TUI must stay out of its way. Three things keep it cheap. All
+three should survive future edits:
 
 - `plot._decimate` collapses series denser than the dot grid to the per-column
-  min/max envelope. The picture is identical — a dense trace's vertical smear
-  *is* its envelope — and cost stops scaling with history length.
+  min/max envelope. The picture is identical (a dense trace's vertical smear
+  *is* its envelope), and cost stops scaling with history length.
 - `render_braille_plot` appends runs of same-styled cells, not one `Text.append`
   per cell. A frame is 1600+ cells and that call was 36% of render time.
 - `VisualizerApp._refresh` only redraws a panel when its stream delivered
-  something or the panel resized. sonicshow speaks at 1 Hz, so redrawing the
-  wind plot on every tick was seven-eighths wasted.
+  something or the panel resized. sonicshow sends at 1 Hz, so redrawing the wind
+  plot on every tick wasted seven of every eight redraws.
 
-Together those took a refresh from ~52 ms/s to ~20 ms/s. When touching this
-path, measure rather than reason: the first guess (that segment drawing
-dominated) was wrong, and a profile said otherwise.
+Together they took a refresh from ~52 ms/s to ~20 ms/s. Measure before changing
+anything on this path: the first guess, that segment drawing dominated, turned
+out to be wrong.
 
 Two correctness rules follow from the plot's x axis being **sample-indexed**,
 not time-indexed. Both are easy to undo by accident:
@@ -110,28 +110,28 @@ not time-indexed. Both are easy to undo by accident:
 - A stream that goes silent must still occupy the slots it missed
   (`SeriesBuffer`, `detect_gaps=True`). Nothing is appended while nothing is
   arriving, so without this the trace closes over an outage and the axis
-  silently compresses while the header still claims "last 54 s". For EC data a
-  gap is exactly what an operator needs to see.
+  silently compresses while the header still claims "last 54 s". For EC data,
+  the gap is what an operator needs to see.
 
-`SeriesBuffer` *learns* the cadence rather than taking it as configuration: an
-analyzer's rate is a per-site value this package does not hardcode, and the
-stream is the most reliable statement of it. Normal arrivals feed an
+`SeriesBuffer` measures the cadence instead of taking it from configuration. An
+analyzer's rate is a per-site value that this package does not hardcode, and the
+stream itself is the most reliable source for it. Normal arrivals feed an
 exponential moving average; a late arrival is measured against it, pads
 `round(delta / interval) - 1` slots, and never pollutes the estimate. Use
-`round`, not `int` — an exact 4 s gap at 20 Hz evaluates to 79.999….
+`round`, not `int`: an exact 4 s gap at 20 Hz evaluates to 79.999….
 
 Verified end to end: a 4 s analyzer dropout produces 80 `nan` slots and renders
 as a 6-column hole, against 0 blank columns for uninterrupted data.
 
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
-Avoid `print()` inside a `run_test` block — Textual routes it through a cp1252
+Avoid `print()` inside a `run_test` block: Textual routes it through a cp1252
 stream on Windows and non-ASCII output raises. For the same reason, user-facing
-unit strings stay ASCII (`m s-1`, `umol mol-1`), matching rECorD's own notation.
+unit strings stay ASCII (`m s-1`, `umol mol-1`), rECorD's own notation.
 
 ## Reference sources
 
-Everything below was derived from reading the source of rECorD and its two
-in-house dependencies:
+Everything below comes from reading the source of rECorD and its two in-house
+dependencies:
 
 | Package | Version | What it does |
 |---|---|---|
@@ -153,10 +153,10 @@ snapshots.
 
 `record` is a single asyncio process, started as
 `record <SonicType> <global_config.toml>`. Its main loop (`BaseReader.start`,
-`record/utils.py:826`) is driven by the **sonic**, which is the clock:
+`record/utils.py:826`) is driven by the **sonic**, which acts as the clock:
 
-1. Block on the first byte from the sonic serial port — this byte's arrival is
-   the record timestamp.
+1. Block on the first byte from the sonic serial port. Its arrival is the
+   record timestamp.
 2. While the rest of the sonic line trickles into the UART buffer, do async work
    concurrently: read gas-analyzer (GA) UDP sockets, and write the *previous*
    record to the data file.
@@ -178,9 +178,9 @@ Key structural points:
   inter-process boundary and the reason UDP multicast is a hard dependency.
 - **Record alignment**: `GasAnalyzer` (`record/utils.py:85`) keeps a deque the
   same length as the sonic buffer and sorts async GA records into slots aligned
-  to sonic records, handling jitter, bursts after network glitches, and GA
-  frequencies above/below the sonic's. Every written GA record carries a status
-  bitfield (see below).
+  to sonic records; it copes with jitter, with bursts after network glitches,
+  and with GA frequencies above/below the sonic's. Every written GA record
+  carries a status bitfield (see below).
 - **Output**: TOA5 (or ICOS) CSV written by `pygl.Datafile`, flushed every 100
   records, rolled over per `option` (`"daily"` or `"ec.N"` = N half hours), and
   gzipped in a subprocess on rollover. Line 4 of the TOA5 header is misused to
@@ -189,12 +189,12 @@ Key structural points:
 
 ## Transport: UDP multicast
 
-All of rECorD's live streams go through `udpmulticast`. Two facts dominate the
+All of rECorD's live streams go through `udpmulticast`. Two facts shape the
 design of this project:
 
 - **The streams do not leave the host.** `get_multicast_server_socket`
-  (`udpmulticast/server.py:10`) defaults to `ttl=0` — "does not leave the local
-  host" — with `IP_MULTICAST_LOOP=1`, and binds to `127.0.0.1` everywhere
+  (`udpmulticast/server.py:10`) defaults to `ttl=0` ("does not leave the local
+  host") with `IP_MULTICAST_LOOP=1`, and binds to `127.0.0.1` everywhere
   rECorD uses it. So **the visualizer must run on the same machine as rECorD**,
   unless the site reconfigures. There is a convention for that, visible in
   `udpsend.py`: one well-known group means localhost and binds to `127.0.0.1`,
@@ -211,7 +211,7 @@ design of this project:
   INADDR_ANY)`. Do not copy the upstream function verbatim.
 
 On Linux the loopback interface also needs a multicast route
-(`224.0.0.0/4 dev lo`, plus `ip link set multicast on lo`) — see the
+(`224.0.0.0/4 dev lo`, plus `ip link set multicast on lo`); see the
 `udpmulticast` README. If nothing arrives on a machine that is definitely
 running rECorD, check this first.
 
@@ -230,7 +230,7 @@ datagram as a record (`MulticastProtocol.datagram_received`,
 
 ## Data sources available to this visualizer
 
-Ordered by usefulness. Sources 1 and 2 are what a TUI would normally consume.
+Ordered by usefulness. Sources 1 and 2 are the ones a TUI would normally use.
 
 ### 1. `sonicshow` — 1 Hz sonic + system summary
 
@@ -238,7 +238,7 @@ Ordered by usefulness. Sources 1 and 2 are what a TUI would normally consume.
   defaults in `BaseReader.__init__` (`record/utils.py:653`); the `sonicshow` CLI
   repeats them as its `-g` / `-p` defaults. One message per `sonicshow_interval`
   (1 s), newline-terminated.
-- **The payload is a Python dict `repr()`, not JSON** — it is built as
+- **The payload is a Python dict `repr()`, not JSON**: it is built as
   `f"{sonicshow_dict}\n".encode()` (`record/utils.py:933`), so it uses single
   quotes. Parse with `ast.literal_eval`, never `json.loads`.
 - Reference consumer: the `sonicshow` CLI → `DeviceShow` (`record/utils.py:987`),
@@ -271,7 +271,7 @@ Ordered by usefulness. Sources 1 and 2 are what a TUI would normally consume.
 ### 2. `analyzershow` — ~1 Hz gas analyzer summary
 
 - Group and port from the `analyzershow_ip` / `analyzershow_port` defaults in
-  `BaseAnalyzer.__init__` (`record/ga_utils.py:19`) — same group as sonicshow,
+  `BaseAnalyzer.__init__` (`record/ga_utils.py:19`): same group as sonicshow,
   the next port up.
 - Also a Python dict `repr()`, same parsing caveat.
 - Contents are per-analyzer and configured via `analyzershow_variables`, a
@@ -284,23 +284,23 @@ Ordered by usefulness. Sources 1 and 2 are what a TUI would normally consume.
 ### 3. Raw GA stream — full rate, real JSON
 
 - The GA's own multicast group/port, taken from the `ip` and `port` keys of the
-  site's `[gasanalyzers.<name>]` section. Not a code default — it is per site.
-- One `json.dumps` object per line at the analyzer's rate (~20 Hz) — this is
+  site's `[gasanalyzers.<name>]` section. Not a code default; it is per site.
+- One `json.dumps` object per line at the analyzer's rate (~20 Hz). This is
   genuine JSON (`record/ga_utils.py:268` and `:296`).
 - Structure is nested and analyzer-specific; the config's `var_map` describes
   the path, e.g. `var_map.Data.CO2D = "CO2_CONC"` → `{"Data": {"CO2D": ...}}`.
   Buffered records get an extra `{"Auxiliary": {"BufferSize": n}}`.
 - **This is the only high-rate stream on the network.** rECorD exports no
-  high-rate sonic stream — wind data is only available at 1 Hz via sonicshow,
+  high-rate sonic stream: wind data is only available at 1 Hz via sonicshow,
   or at full rate by tailing the data file.
 
 ### 4. Data files
 
-The fallback for full-rate sonic data: tail the file rECorD is currently
+For full-rate sonic data, the fallback is to tail the file rECorD is currently
 writing. Details, all from `pygl/pygl.py`:
 
 - **Location is flat.** `Datafile._compose_filepath` (`pygl/pygl.py:159`) only
-  applies date directories and `subdir` when `archive_dirs` is true — and
+  applies date directories and `subdir` when `archive_dirs` is true, and
   `record.py` never passes `archive_dirs`, so it stays `False`. The `date_dirs=True`
   and `subdir=ec_setup_dir` that `record.py` does pass are therefore **ignored**,
   and files land directly in `workingdir` = `[datafile].root_dir`, defaulting to
@@ -310,8 +310,8 @@ writing. Details, all from `pygl/pygl.py`:
   at `-idaq`, uppercased. The timestamp is `YYYYMMDD` for `option="daily"` and
   `YYYYMMDD-HHMM` for `option="ec.N"`.
 - **There is no TIMESTAMP column.** `BaseReader.write_to_file` calls
-  `_prepare_data_string(None, ...)` (`record/utils.py:786`) — passing `None` as
-  the time — and the site's `variables` list contains no `TIMESTAMP`. Record
+  `_prepare_data_string(None, ...)` (`record/utils.py:786`), passing `None` as
+  the time, and the site's `variables` list contains no `TIMESTAMP`. Record
   timing must be reconstructed from the filename plus the fixed 20 Hz rate.
   Anything derived this way drifts; do not present it as an exact timestamp.
 - **Format**: comma-separated, `\r\n` line endings. Missing values are the
@@ -321,7 +321,7 @@ writing. Details, all from `pygl/pygl.py`:
   1. `"TOA5",<hostname>,<platform.machine()>,<empty serial>,<platform.platform()>,<program path>,<rECorD version>,<table name>`
   2. variable names
   3. units
-  4. device tags — `[GillHS50]`, `[LI7500RS]`, … (this is the "aggregations"
+  4. device tags: `[GillHS50]`, `[LI7500RS]`, … (this is the "aggregations"
      line, repurposed)
 
   ICOS has a single header line of quoted variable names and no units.
@@ -343,7 +343,7 @@ writing. Details, all from `pygl/pygl.py`:
 | `0x04` | `DATA_BUFFERED` | record was time-sorted into the buffer, not taken live |
 | `0x01` | `JSON_ERROR` | JSON parse failure |
 
-These are *not* in sonicshow — only in the data file.
+These are *not* in sonicshow, only in the data file.
 
 **Sonic `StaA` / `StaD`** (Gill): `StaA` doubles as the record counter, cycling
 `1..recnum_max` (10 for HS-50, 6 for R3-50), and as an address selecting what
@@ -366,15 +366,15 @@ Two files, both needed to interpret a live stream:
 
 `var_map` maps *raw instrument variable → data-file variable*, and may be
 nested to mirror a nested JSON stream. `VariableMapping` (`record/utils.py:29`)
-flattens it. If the visualizer wants to label GA values meaningfully, it needs
-the same config.
+flattens it. To label GA values meaningfully, the visualizer needs the same
+config.
 
 ## Known issues in the reference source
 
 Relevant because they affect what we can rely on:
 
 - `record.py` offers `Metek_uSonic3` as a CLI choice, but no such class exists
-  in `record/sonics.py` — selecting it raises `AttributeError`. Only the two
+  in `record/sonics.py`, so selecting it raises `AttributeError`. Only the two
   Gill sonics actually work, despite `data/metek.toml` existing.
 - The example `data/record.toml` writes flat `use_timestamp` / `timestamp_var`
   keys, but `record.py:176` reads a nested `[gasanalyzers.<name>.timestamp]`
@@ -388,7 +388,7 @@ Relevant because they affect what we can rely on:
 - `Datafile._compose_filename` and `_compose_filepath` use
   `current_time=datetime.now()` as a *default argument*, evaluated once at
   import. The initial filename is therefore stamped at import time; rECorD
-  papers over this by calling `new_file(..., force=True)` at startup.
+  works around this by calling `new_file(..., force=True)` at startup.
 - `get_site()` does `hostname[:hostname.find('-idaq')]`. On a host whose name
   does not contain `-idaq`, `find` returns `-1` and the last character of the
   hostname is silently chopped off.
@@ -399,7 +399,7 @@ Relevant because they affect what we can rely on:
 ## Implications for this project
 
 - Implement our own multicast subscriber; do not depend on `record`, `pygl`, or
-  `udpmulticast`. Write the socket setup portably — the upstream client recipe
+  `udpmulticast`. Write the socket setup portably: the upstream client recipe
   does not run on Windows (see "Transport" above).
 - **Deployment is constrained**: with rECorD's defaults (TTL 0, bound to
   loopback) the live streams are reachable only from the logging host itself.
@@ -412,8 +412,8 @@ Relevant because they affect what we can rely on:
 - Treat every stream as lossy: UDP, no retransmit, and the sender formats
   numbers as text. Missing datagrams are normal; show staleness rather than
   freezing on the last value (`DeviceShow` uses a 1.2 s timeout).
-- Reading the site's `record.toml` is the cleanest way to know which GAs exist,
-  their multicast addresses, and the variable names to display.
+- Reading the site's `record.toml` is the most reliable way to find out which
+  GAs exist, their multicast addresses, and the variable names to display.
 - If tailing data files: no timestamp column exists, files are flat in
   `root_dir`, and the current file disappears on rollover (gzipped). Detect the
   new file by name rather than holding a file handle.
