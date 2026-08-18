@@ -22,6 +22,12 @@ dependencies = [
 [project.scripts]
 record-ec-visualizer-tui = "record_ec_visualizer_tui.__main__:main"
 
+[tool.hatch.build.targets.sdist]
+# CLAUDE.md documents rECorD internals derived from reading the in-house
+# record/pygl/udpmulticast sources. It stays in the repo, but it should not
+# travel inside a distributed artifact; the sdist picked it up by default.
+exclude = ["CLAUDE.md"]
+
 [tool.uv]
 python-preference = "managed"
 

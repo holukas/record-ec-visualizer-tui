@@ -420,7 +420,7 @@ Relevant because they affect what we can rely on:
 
 ## Conventions in this repo
 
-Mirrors the sibling project `F:\dev\diive`: hatchling, GPL-3.0, ruff with
+Mirrors the sibling project `diive`: hatchling, GPL-3.0, ruff with
 `line-length = 110` and `select = ["E4", "E7", "E9", "F", "B"]`, dependencies
 pinned with lower bounds, `uv.lock` committed.
 
