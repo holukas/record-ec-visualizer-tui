@@ -5,6 +5,14 @@ Notable changes to this project, newest first. Version numbers follow
 
 ## Unreleased
 
+### Added
+
+- A logo, in the same family as dyco's: the mark shows the three wind components
+  as streamlines and the gas as discrete amber records; the wordmark is the
+  short name **ecvis**, its `i` dotted with a single gas record. Mark, wordmark
+  and lockup ship as SVG in light, dark and mono variants under `images/`, with
+  PNG exports.
+
 ### Changed
 
 - `--dump` now prints each analyzer record a second time, translated through the

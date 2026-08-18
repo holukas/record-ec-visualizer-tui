@@ -1,6 +1,13 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/logo_ecvis_lockup_dark.svg">
+  <img alt="ecvis" src="images/logo_ecvis_lockup.svg" width="420">
+</picture>
+
 # record-ec-visualizer-tui
 
 A terminal dashboard that shows the data rECorD is measuring, as it measures it.
+**ecvis** for short. The mark reads the same way the display does: the three wind
+components as streamlines, the gas as discrete records arriving underneath.
 
 rECorD (*Robust Eddy Covariance Data Acquisition*) reads a sonic anemometer over
 a serial port, merges in gas analyzer records that arrive over UDP multicast,

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 318 90" width="318" height="90" role="img" aria-label="ecvis">
+  <title>ecvis</title>
+  <g transform="translate(-2.467 8.533) scale(1.23333)">
+    <rect x="2" y="2" width="60" height="60" rx="13" fill="#15171C"/>
+    <g fill="none" stroke-linecap="round" stroke-width="4.5" stroke="#EDECE6">
+      <path d="M8 14 Q16 8 24 14 Q32 20 40 14 Q48 8 56 14"/>
+      <path d="M8 27 Q16 21 24 27 Q32 33 40 27 Q48 21 56 27"/>
+      <path d="M8 40 Q16 34 24 40 Q32 46 40 40 Q48 34 56 40"/>
+    </g>
+    <g fill="#EDECE6">
+      <circle cx="10" cy="52" r="2.8"/>
+      <circle cx="19" cy="49" r="2.8"/>
+      <circle cx="28" cy="53" r="2.8"/>
+      <circle cx="37" cy="50" r="2.8"/>
+      <circle cx="46" cy="53" r="2.8"/>
+      <circle cx="55" cy="50" r="2.8"/>
+    </g>
+  </g>
+  <g transform="translate(98.000 -2.0)">
+  <g fill="none" stroke="#15171C" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 48 L52 48"/>
+    <path d="M52 48 A22 22 0 1 0 44.14 64.85"/>
+    <path d="M108.35 33.28 A22 22 0 1 0 108.35 62.72"/>
+    <path d="M126 26 L143 70 L160 26"/>
+    <path d="M176 26 V70"/>
+    <path d="M211.09 32.25 A10.5 10.5 0 1 0 202 48 A10.5 10.5 0 1 1 192.91 63.75"/>
+  </g>
+  <circle cx="176" cy="10" r="7" fill="#15171C"/>
+  </g>
+</svg>
