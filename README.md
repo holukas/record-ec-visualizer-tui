@@ -27,8 +27,8 @@ uv run record-ec-visualizer-tui --demo
 ```
 
 Without `--demo` the program expects a real site and exits with an error if you
-give it no addresses. This is deliberate: the bare command on a logging host
-must never display simulated numbers.
+give it no addresses. The refusal is deliberate: the bare command on a logging
+host must never display simulated numbers.
 
 The demo is also available as a plain script, for starting it from an editor:
 
@@ -59,10 +59,10 @@ rather than wrapping onto a second line and costing a row of plot.
 `sw` is the standard deviation of the vertical wind, `TKE` the turbulent
 kinetic energy, `0.5·(σu²+σv²+σw²)`. Neither needs extra data, since every
 `sonicshow` message already reports each wind component as `mean(stdev)`.
-Treat them as a rough indicator of mixing, not as a measurement: each standard
+Treat them as a rough indicator of mixing, not as a measurement. Each standard
 deviation covers a single second, so it misses the slower eddies that a 30
-minute flux average includes, and both values therefore come out too low. In the
-demo `sigma_w` is set to 0.28 and the panel shows roughly half that. A wider
+minute flux average includes, and both values come out too low. In the demo
+`sigma_w` is set to 0.28 and the panel shows roughly half that. A wider
 terminal also shows the standard deviation of each component.
 
 To inspect the data rather than watch it, this example prints the raw bytes of
@@ -225,8 +225,8 @@ locale (`LANG=C.UTF-8` or similar).
 
 ### Check the connection first
 
-`--dump` prints the decoded records without starting the display, which shows
-whether the streams reach you at all:
+`--dump` prints the decoded records without starting the display, so you can
+see whether the streams reach you at all:
 
 ```bash
 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
@@ -234,10 +234,10 @@ record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group 
 
 The analyzer addresses come from `record.toml`. The sonicshow group and port are
 defaults in rECorD's code (`sonicshow_ip` and `sonicshow_port` in
-`BaseReader.__init__`) and not entries in the config file, which is why they are
-passed separately. The easiest way to read them off a logging host is the
-`sonicshow` program installed alongside rECorD; its `-g` and `-p` defaults are
-the same values:
+`BaseReader.__init__`) and not entries in the config file, so you pass them
+separately. The easiest way to read them off a logging host is the `sonicshow`
+program installed alongside rECorD; its `-g` and `-p` defaults are the same
+values:
 
 ```bash
 sonicshow --help
@@ -263,11 +263,11 @@ exact name.
 
 Run the visualizer as the user that runs rECorD. That user can already read
 `record.toml`, and the session then belongs to the account operating the logger.
-Port access is not the reason: the visualizer shares the analyzer ports with
+Port access is not the reason. The visualizer shares the analyzer ports with
 rECorD's own subscriber, and both programs set `SO_REUSEADDR` and `SO_REUSEPORT`
-on the socket, which is what Linux requires for a shared UDP bind, so this also
-works from another account. A startup failure with `OSError: [Errno 98] Address
-already in use` therefore means the port is held by something other than rECorD.
+on the socket, which is what Linux requires for a shared UDP bind. Port sharing
+therefore works from any account. A startup failure with `OSError: [Errno 98]
+Address already in use` means the port is held by something other than rECorD.
 
 Run it inside tmux or screen, otherwise a dropped SSH connection takes the
 display down with it.
