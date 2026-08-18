@@ -7,30 +7,21 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Added
 
-- A logo. The icon shows what the display shows: three wavy lines for the wind
-  components, and a row of amber dots for the gas records underneath. Next to it
-  the short name **ecvis**, with the dot of the `i` in amber. All files are in
-  `images/`: SVG for light, dark and single-color use, plus PNG copies. The
-  README now opens with it.
+- A logo: three wavy lines for the wind, amber dots for the gas, and the short
+  name **ecvis**. SVG and PNG files in `images/`; the README opens with it.
 
 ### Changed
 
-- `--dump` prints each gas analyzer record twice: once as it arrives, and once
-  with the site's `var_map` names applied. The name passed to `--gas-var` has to
-  be one of the mapped names, and those never appear in the raw record. Before
-  this change the dump could only show names that would not work.
+- `--dump` also prints each analyzer record with the site's `var_map` names
+  applied. Those are the names `--gas-var` accepts, and they never appear in
+  the raw record.
 
 ### Fixed
 
-- The install guide said that copying the wheel file was enough for a machine
-  without internet. It was not: pip would still try to download textual and
-  rich. The guide now downloads the dependencies too and installs everything
-  from a local folder.
-- The guide claimed the visualizer can share rECorD's ports only when both
-  programs run under the same account. That was wrong. Both programs set the
-  socket option that allows sharing (`SO_REUSEADDR`), and Linux does not care
-  which user owns them. Running as the same user is still recommended, but the
-  "address already in use" error the guide predicted does not happen.
+- Offline install: the wheel alone was not enough, pip would still download
+  textual and rich. The guide now installs everything from a local folder.
+- The guide wrongly said sharing rECorD's ports needs the same account. Both
+  programs set `SO_REUSEADDR`, so sharing works from any account.
 
 ## v0.1.0 | 17 Aug 2026
 
