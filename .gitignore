@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Site config and reference snapshots. Neither belongs in this repo: a real
+# record.toml carries the site's actual multicast groups and ports, and
+# references/ holds read-only copies of the in-house record/pygl/udpmulticast
+# sources. Both are read from outside the tree, so ignoring them costs nothing
+# and stops a stray copy from being staged.
+record.toml
+references/
