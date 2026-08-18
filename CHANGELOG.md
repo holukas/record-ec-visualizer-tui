@@ -3,6 +3,21 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.1 | 18 Aug 2026
+
+Documentation and packaging. Nothing in the program changed.
+
+### Changed
+
+- README and CLAUDE.md rewritten in plainer language. The commands, numbers and
+  content are the same.
+- CLAUDE.md is no longer included in the source distribution. It documents
+  rECorD's internals and is only useful when working on this repository.
+- `record.toml` and `references/` are now in `.gitignore`. A site's real
+  `record.toml` holds its multicast groups and ports, and `references/` holds
+  the copies of the in-house `record`, `pygl` and `udpmulticast` sources.
+  Neither was ever committed, and now neither can be by accident.
+
 ## v0.2.0 | 18 Aug 2026
 
 ### Added
