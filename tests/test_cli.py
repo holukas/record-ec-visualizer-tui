@@ -67,6 +67,27 @@ def test_interface_reaches_every_endpoint(tmp_path, monkeypatch):
     assert {e.interface for e in captured} == {"127.0.0.1"}
 
 
+def test_dump_shows_the_var_mapped_gas_record(capsys):
+    """--dump exists to find the ``--gas-var`` name, which is a var_map *output*.
+
+    The raw record only carries the instrument's own names (``Data.CO2D``), so a
+    dump that stopped there would send the operator hunting for a name that can
+    never match. The mapped line is where the right answer appears.
+    """
+    from record_ec_visualizer_tui import __main__ as cli
+    from record_ec_visualizer_tui.codec import VariableMap
+    from record_ec_visualizer_tui.model import LiveState
+
+    async def lines():
+        yield "ga:li7500rs", b'{"Data": {"CO2D": 16.2}}'
+
+    state = LiveState(gas_map=VariableMap({"Data": {"CO2D": "CO2_CONC"}}))
+    asyncio.run(cli._dump(lines(), state))
+    out = capsys.readouterr().out
+    assert "'CO2D': 16.2" in out
+    assert "'CO2_CONC': 16.2" in out
+
+
 @pytest.mark.parametrize(
     "argv, expected",
     [

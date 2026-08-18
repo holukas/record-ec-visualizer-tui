@@ -3,6 +3,32 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- A logo, in the same family as dyco's: the mark shows the three wind components
+  as streamlines and the gas as discrete amber records; the wordmark is the
+  short name **ecvis**, its `i` dotted with a single gas record. Mark, wordmark
+  and lockup ship as SVG in light, dark and mono variants under `images/`, with
+  PNG exports.
+
+### Changed
+
+- `--dump` now prints each analyzer record a second time, translated through the
+  site's `var_map`. `--gas-var` has to match a translated name, which the raw
+  record never contains, so the dump used to point at names that could not work.
+
+### Fixed
+
+- The README's offline install said copying the wheel was enough; installing it
+  would still have made pip fetch textual and rich from PyPI. It now builds a
+  wheelhouse with the dependencies included.
+- The README claimed Linux lets the visualizer share rECorD's analyzer ports
+  only from the same account. Both sides set `SO_REUSEADDR`, which Linux accepts
+  for a shared UDP bind regardless of the owner, so the same-user advice remains
+  but the predicted `Errno 98` failure does not apply.
+
 ## v0.1.0 | 17 Aug 2026
 
 First release.

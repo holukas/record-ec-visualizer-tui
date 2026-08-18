@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 90" width="220" height="90" role="img" aria-label="ecvis">
+  <title>ecvis</title>
+  <g transform="translate(-2.0 -2.0)">
+  <g fill="none" stroke="#15171C" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 48 L52 48"/>
+    <path d="M52 48 A22 22 0 1 0 44.14 64.85"/>
+    <path d="M108.35 33.28 A22 22 0 1 0 108.35 62.72"/>
+    <path d="M126 26 L143 70 L160 26"/>
+    <path d="M176 26 V70"/>
+    <path d="M211.09 32.25 A10.5 10.5 0 1 0 202 48 A10.5 10.5 0 1 1 192.91 63.75"/>
+  </g>
+  <circle cx="176" cy="10" r="7" fill="#f0a500"/>
+  </g>
+</svg>

@@ -1,6 +1,13 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/logo_ecvis_lockup_dark.svg">
+  <img alt="ecvis" src="images/logo_ecvis_lockup.svg" width="420">
+</picture>
+
 # record-ec-visualizer-tui
 
 A terminal dashboard that shows the data rECorD is measuring, as it measures it.
+**ecvis** for short. The mark reads the same way the display does: the three wind
+components as streamlines, the gas as discrete records arriving underneath.
 
 rECorD (*Robust Eddy Covariance Data Acquisition*) reads a sonic anemometer over
 a serial port, merges in gas analyzer records that arrive over UDP multicast,
@@ -150,37 +157,76 @@ Tests and linting:
 uv run pytest -q && uv run ruff check .
 ```
 
-## Installing on the logging host
+## Setting it up on the logging host
 
 The streams stay on the machine rECorD runs on, so the visualizer has to be
-installed there too. rECorD itself is installed with
-[pipx](https://pypa.github.io/pipx/), which works here as well:
+installed there too. The path from a fresh host to a running display has four
+steps — install, run the demo, check the connection with `--dump`, start the
+display — and each step proves one thing, so a failure points at its own cause
+rather than at everything at once.
+
+Two checks before starting. The Python has to be 3.11 or newer:
+
+```bash
+python3 --version
+```
+
+Debian 12 ships 3.11, so on the usual logging host this passes. If it does not,
+see the uv fallback at the end of this section. And do everything below as the
+same user that runs rECorD — the reasons are under
+[Running it day to day](#running-it-day-to-day).
+
+### Install
+
+rECorD itself is installed with [pipx](https://pypa.github.io/pipx/), which
+works here as well:
 
 ```bash
 pipx install git+https://github.com/holukas/record-ec-visualizer-tui.git
 ```
 
-If the host has no outbound network, build the wheel elsewhere and copy it over.
-It is pure Python and about 40 kB:
+If the host has no outbound network, build the wheel elsewhere and copy it over
+together with its dependencies. The wheel alone is not enough: installing it
+would make pip fetch textual and rich from PyPI. Everything involved is pure
+Python, so wheels downloaded on any machine work on the logger:
 
 ```bash
 uv build
 ```
 
 ```bash
-scp dist/record_ec_visualizer_tui-*.whl user@logger:/tmp/
+pip download dist/record_ec_visualizer_tui-0.1.0-py3-none-any.whl -d wheelhouse
 ```
 
 ```bash
-pipx install /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+scp -r wheelhouse user@logger:/tmp/wheelhouse
 ```
 
-If the host's Python is older than 3.11, install it with uv instead. uv fetches
-its own interpreter and leaves the system Python alone:
+```bash
+pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+```
+
+If the host's Python is older than 3.11, install with uv instead. uv fetches
+its own interpreter and leaves the system Python alone — though fetching it
+does need network access:
 
 ```bash
 uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
 ```
+
+### Run the demo once
+
+The demo needs no addresses and no config, so it separates "the program runs
+here" from "the streams reach it":
+
+```bash
+record-ec-visualizer-tui --demo
+```
+
+If two plots draw and move, the install, the terminal, and the locale are all
+fine. If the plots come out as rows of boxes instead of braille, set a UTF-8
+locale (`LANG=C.UTF-8` or similar) — better to find that out now than while
+also wondering whether the streams arrive.
 
 ### Check the connection first
 
@@ -195,24 +241,40 @@ record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group 
 The analyzer addresses come from `record.toml`. The sonicshow group and port are
 defaults in rECorD's code (`sonicshow_ip` and `sonicshow_port` in
 `BaseReader.__init__`) rather than entries in the config file, which is why they
-are given separately.
+are given separately. The quickest way to read them off a logging host is the
+`sonicshow` program installed next to rECorD — its `-g` and `-p` defaults are
+those same values:
 
-Each record is printed as a plain dictionary, so this is also how you find the
-analyzer's real variable names. Pick the one you want and pass it as
-`--gas-var`. Once records from both streams appear, drop `--dump` and start the
-display.
+```bash
+sonicshow --help
+```
+
+The dump is also how you find the right value for `--gas-var`. Analyzer records are
+printed twice: as they arrive, with the instrument's own names, and again after
+the site's `var_map`, with the site's names. `--gas-var` has to come from the
+second line — the raw names can never match. If the `after var_map` line does
+not appear at all, the `var_map` in the config does not fit what the analyzer
+sends, and the display would stay empty for the same reason. Once records from
+both streams appear, drop `--dump` and start the display.
 
 ### Running it day to day
 
 ```bash
-tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port>'
+tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --gas-var <var>'
 ```
 
-Run it as the same user that runs rECorD. The socket sets `SO_REUSEPORT` so that
-it can share the port with rECorD's own subscriber, and Linux allows that only
-between processes belonging to the same user. From another account the program
-fails at startup with `OSError: [Errno 98] Address already in use`, which looks
-like a configuration mistake but is a permission problem.
+`--gas-var` is the name the `--dump` step confirmed. Leaving it off means the
+default `CO2`, which is only right if the site's `var_map` produces exactly that
+name.
+
+Run it as the same user that runs rECorD — that user can already read
+`record.toml`, and the session ends up owned by the account operating the
+logger. The visualizer shares the analyzer ports with rECorD's own subscriber;
+both programs set `SO_REUSEADDR` and `SO_REUSEPORT` on the socket, which is
+what Linux requires for a shared UDP bind, so the sharing works even from
+another account. If startup fails with `OSError: [Errno 98] Address already in
+use`, whatever already holds the port is not one of rECorD's sockets — those
+allow sharing.
 
 Run it inside tmux or screen. Otherwise a dropped SSH connection takes the
 display down with it.
@@ -220,9 +282,6 @@ display down with it.
 Use `nice`. rECorD's 20 Hz loop warns whenever a cycle takes longer than 50 ms,
 and the visualizer sits on the same machine. Redrawing costs roughly 20 ms per
 second, so there is room to spare, but acquisition has priority.
-
-Set a UTF-8 locale (`LANG=C.UTF-8` or similar), or the braille plots come out as
-rows of boxes.
 
 ### If nothing arrives
 
