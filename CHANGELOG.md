@@ -7,27 +7,30 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Added
 
-- A logo, in the same family as dyco's: the mark shows the three wind components
-  as streamlines and the gas as discrete amber records; the wordmark is the
-  short name **ecvis**, its `i` dotted with a single gas record. Mark, wordmark
-  and lockup ship as SVG in light, dark and mono variants under `images/`, with
-  PNG exports.
+- A logo. The icon shows what the display shows: three wavy lines for the wind
+  components, and a row of amber dots for the gas records underneath. Next to it
+  the short name **ecvis**, with the dot of the `i` in amber. All files are in
+  `images/`: SVG for light, dark and single-color use, plus PNG copies. The
+  README now opens with it.
 
 ### Changed
 
-- `--dump` now prints each analyzer record a second time, translated through the
-  site's `var_map`. `--gas-var` has to match a translated name, which the raw
-  record never contains, so the dump used to point at names that could not work.
+- `--dump` prints each gas analyzer record twice: once as it arrives, and once
+  with the site's `var_map` names applied. The name passed to `--gas-var` has to
+  be one of the mapped names, and those never appear in the raw record. Before
+  this change the dump could only show names that would not work.
 
 ### Fixed
 
-- The README's offline install said copying the wheel was enough; installing it
-  would still have made pip fetch textual and rich from PyPI. It now builds a
-  wheelhouse with the dependencies included.
-- The README claimed Linux lets the visualizer share rECorD's analyzer ports
-  only from the same account. Both sides set `SO_REUSEADDR`, which Linux accepts
-  for a shared UDP bind regardless of the owner, so the same-user advice remains
-  but the predicted `Errno 98` failure does not apply.
+- The install guide said that copying the wheel file was enough for a machine
+  without internet. It was not: pip would still try to download textual and
+  rich. The guide now downloads the dependencies too and installs everything
+  from a local folder.
+- The guide claimed the visualizer can share rECorD's ports only when both
+  programs run under the same account. That was wrong. Both programs set the
+  socket option that allows sharing (`SO_REUSEADDR`), and Linux does not care
+  which user owns them. Running as the same user is still recommended, but the
+  "address already in use" error the guide predicted does not happen.
 
 ## v0.1.0 | 17 Aug 2026
 
