@@ -160,23 +160,30 @@ installed there too. rECorD itself is installed with
 pipx install git+https://github.com/holukas/record-ec-visualizer-tui.git
 ```
 
-If the host has no outbound network, build the wheel elsewhere and copy it over.
-It is pure Python and about 40 kB:
+If the host has no outbound network, build the wheel elsewhere and copy it over
+together with its dependencies. The wheel alone is not enough: installing it
+would make pip fetch textual and rich from PyPI. Everything involved is pure
+Python, so wheels downloaded on any machine work on the logger:
 
 ```bash
 uv build
 ```
 
 ```bash
-scp dist/record_ec_visualizer_tui-*.whl user@logger:/tmp/
+pip download dist/record_ec_visualizer_tui-0.1.0-py3-none-any.whl -d wheelhouse
 ```
 
 ```bash
-pipx install /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+scp -r wheelhouse user@logger:/tmp/wheelhouse
 ```
 
-If the host's Python is older than 3.11, install it with uv instead. uv fetches
-its own interpreter and leaves the system Python alone:
+```bash
+pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
+```
+
+If the host's Python is older than 3.11, install with uv instead. uv fetches
+its own interpreter and leaves the system Python alone — though fetching it
+does need network access:
 
 ```bash
 uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.1.0-py3-none-any.whl
@@ -197,10 +204,13 @@ defaults in rECorD's code (`sonicshow_ip` and `sonicshow_port` in
 `BaseReader.__init__`) rather than entries in the config file, which is why they
 are given separately.
 
-Each record is printed as a plain dictionary, so this is also how you find the
-analyzer's real variable names. Pick the one you want and pass it as
-`--gas-var`. Once records from both streams appear, drop `--dump` and start the
-display.
+This is also how you find the right value for `--gas-var`. Analyzer records are
+printed twice: as they arrive, with the instrument's own names, and again after
+the site's `var_map`, with the site's names. `--gas-var` has to come from the
+second line — the raw names can never match. If the `after var_map` line does
+not appear at all, the `var_map` in the config does not fit what the analyzer
+sends, and the display would stay empty for the same reason. Once records from
+both streams appear, drop `--dump` and start the display.
 
 ### Running it day to day
 
@@ -208,11 +218,14 @@ display.
 tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port>'
 ```
 
-Run it as the same user that runs rECorD. The socket sets `SO_REUSEPORT` so that
-it can share the port with rECorD's own subscriber, and Linux allows that only
-between processes belonging to the same user. From another account the program
-fails at startup with `OSError: [Errno 98] Address already in use`, which looks
-like a configuration mistake but is a permission problem.
+Run it as the same user that runs rECorD — that user can already read
+`record.toml`, and the session ends up owned by the account operating the
+logger. The visualizer shares the analyzer ports with rECorD's own subscriber;
+both programs set `SO_REUSEADDR` and `SO_REUSEPORT` on the socket, which is
+what Linux requires for a shared UDP bind, so the sharing works even from
+another account. If startup fails with `OSError: [Errno 98] Address already in
+use`, whatever already holds the port is not one of rECorD's sockets — those
+allow sharing.
 
 Run it inside tmux or screen. Otherwise a dropped SSH connection takes the
 display down with it.

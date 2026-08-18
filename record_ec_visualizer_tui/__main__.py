@@ -163,15 +163,25 @@ def _build_multicast(
     return multicast_lines(endpoints), state, subtitle
 
 
-async def _dump(lines: AsyncIterator[tuple[str, bytes]]) -> None:
-    """Print decoded records, the quickest way to confirm a live connection."""
+async def _dump(lines: AsyncIterator[tuple[str, bytes]], state: LiveState) -> None:
+    """Print decoded records, the quickest way to confirm a live connection.
+
+    Analyzer records are printed twice: as decoded from the wire, and after the
+    site's ``var_map``. ``--gas-var`` has to match a name from the second form —
+    the raw record never contains it — which is what earns the mapped line its
+    place here.
+    """
     async for name, payload in lines:
         try:
             record = parse_show_message(payload) if name == SONICSHOW_STREAM else parse_ga_message(payload)
         except DecodeError as exc:
             print(f"[{name}] decode error: {exc}", file=sys.stderr)
-        else:
-            print(f"[{name}] {record}")
+            continue
+        print(f"[{name}] {record}")
+        if name != SONICSHOW_STREAM:
+            mapped = state.gas_map.apply(record)
+            if mapped:
+                print(f"[{name}] after var_map: {mapped}")
 
 
 def _reject_crossed_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -212,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dump:
         try:
-            asyncio.run(_dump(lines))
+            asyncio.run(_dump(lines, state))
         except KeyboardInterrupt:
             pass
         return 0
