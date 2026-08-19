@@ -7,6 +7,15 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Changed
 
+- Frames are 10-20% cheaper to draw. The renderer used to append to a `Text`
+  once per run of same-styled cells, and a wiggly trace breaks into hundreds of
+  short runs; it now assembles the whole frame as one string plus a list of
+  spans and hands it over once. Scanning a series for its finite samples, its
+  per-column envelope and the bounds of its axis is also one walk now instead
+  of three, so a dense series never builds the points the dot grid could not
+  have shown. The output is unchanged, checked over 66 renders covering both
+  glyph sets, three geometries and eleven series shapes.
+
 - Both plots now step at the same moment. Each panel used to redraw when its
   own stream delivered, so the analyzer's 20 Hz records moved the lower plot on
   every frame while the wind plot above it, fed once a second, sat still in

@@ -12,6 +12,10 @@ from record_ec_visualizer_tui.tui.plot import (
     render_braille_plot,
 )
 
+#: Every braille cell, for asserting that a run holds nothing else.
+BRAILLE_ALL = "".join(chr(BRAILLE_BASE + value) for value in range(256))
+
+
 def _braille_only(text: Text) -> str:
     return "".join(ch for ch in text.plain if ord(ch) >= BRAILLE_BASE)
 
@@ -125,6 +129,51 @@ class TestDenseSeries:
         gap_dots = sum(ord(ch) != BRAILLE_BASE for ch in _braille_only(with_gap))
         full_dots = sum(ord(ch) != BRAILLE_BASE for ch in _braille_only(without_gap))
         assert gap_dots < full_dots
+
+
+class TestSpanOffsets:
+    """The frame is one string plus a list of spans, built by hand.
+
+    Appending to a ``Text`` kept the offsets right for free; computing them
+    means they can be wrong, and a style landing one cell out is the kind of
+    thing that looks like a rendering glitch rather than an arithmetic one.
+    """
+
+    @staticmethod
+    def _plot() -> Text:
+        return render_braille_plot(
+            [
+                {"y": [math.sin(index / 5.0 + phase) for index in range(200)], "color": colour}
+                for phase, colour in ((0.0, "red"), (2.0, "blue"))
+            ],
+            width=40,
+            height=6,
+        )
+
+    def test_no_span_straddles_a_row(self):
+        plot = self._plot()
+        for span in plot.spans:
+            assert "\n" not in plot.plain[span.start : span.end], f"{span} crosses a row"
+
+    def test_no_span_runs_past_the_end(self):
+        plot = self._plot()
+        for span in plot.spans:
+            assert 0 <= span.start < span.end <= len(plot.plain), f"{span} is out of bounds"
+
+    def test_trace_colours_never_reach_the_axis(self):
+        # The axis rule and the value labels are the axis style's; a trace span
+        # that covered them would be an off-by-one in the row offset.
+        plot = self._plot()
+        for span in plot.spans:
+            if span.style in ("red", "blue"):
+                covered = plot.plain[span.start : span.end]
+                assert "│" not in covered and not covered.strip(BRAILLE_ALL), covered
+
+    def test_the_axis_span_covers_the_label_and_the_rule(self):
+        plot = self._plot()
+        first = plot.spans[0]
+        assert plot.plain[first.start : first.end].endswith("│")
+        assert first.start == 0
 
 
 class TestBlocksGlyphSet:

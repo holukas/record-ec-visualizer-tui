@@ -99,18 +99,29 @@ is the logging host, where rECorD's 20 Hz loop warns as soon as a cycle exceeds
 50 ms, so the TUI must stay out of its way. Three things keep it cheap. All
 three should survive future edits:
 
-- `plot._decimate` collapses series denser than the dot grid to the per-column
-  min/max envelope. The picture is identical (a dense trace's vertical smear
-  *is* its envelope), and cost stops scaling with history length.
-- `render_braille_plot` appends runs of same-styled cells, not one `Text.append`
-  per cell. A frame is 1600+ cells and that call was 36% of render time.
+- `plot._sample_points` walks each series once: it collapses anything denser
+  than the dot grid to the per-column min/max envelope, and returns the axis
+  bounds from the same pass. The picture is identical (a dense trace's vertical
+  smear *is* its envelope), cost stops scaling with history length, and a dense
+  series never materialises the points the grid could not have shown.
+- `render_braille_plot` assembles the frame as one string plus a list of
+  `Span`s and hands it to `Text` once. Appending was 29% of a frame: every call
+  strips control codes and extends the span list, and a wiggly trace breaks
+  into hundreds of short same-styled runs. Each row is now joined in one pass
+  and the runs are slices of it. Together with the single walk this is 10-20%
+  off a frame, verified identical over 66 renders spanning both glyph sets,
+  three geometries and eleven series shapes.
 - `VisualizerApp._refresh` redraws only when the window has scrolled by a whole
   dot column, which is the smallest movement the grid can express. The rate then
   follows the range on display rather than the stream: a 15 s window steps on
   every frame, a 240 s one about twice a second.
 
-Measure before changing anything on this path: the first guess, that segment
-drawing dominated, turned out to be wrong.
+Measure before changing anything on this path, and measure it **against a git
+revision in one process, interleaved, best of many**. This machine's run-to-run
+drift is larger than any of these effects: the same benchmark in two separate
+runs made the same change look like a 2x win and a 36% regression. The first
+guess about where the time goes has also been wrong twice — segment drawing was
+not the dominant cost, and neither was the per-cell loop.
 
 **Both panels are drawn from one token, or neither is.** They are stacked to be
 read against each other, and two plots of the same seconds that scroll at
