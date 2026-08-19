@@ -3,7 +3,7 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v0.3.0 | 19 Aug 2026
 
 ### Added
 
