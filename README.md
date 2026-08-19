@@ -75,6 +75,9 @@ terminal limited to those renders faithfully), `okabe` (Okabe-Ito, which keeps
 its separations under the common forms of colour blindness), `aurora` and
 `dusk`.
 
+The title bar names the source and the running version, as
+`simulated · li7500rs · v0.3.0`, so a screenshot says which build drew it.
+
 The display has no borders and no separate panels for the numbers. Each stream
 gets one header line, which shows the current values, names the components in
 their plot colour and separates the two plots. The rest of the space is plot. In

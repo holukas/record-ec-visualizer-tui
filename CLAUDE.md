@@ -74,6 +74,17 @@ of everything below it, or the header wraps and costs a plot row;
 `TestHeaderDegradation` in `tests/test_app.py` asserts it fits at every width
 down to the point where the value chips alone no longer do.
 
+The trace colours come from a `Palette` in `tui/app.py`, cycled with `c`, and
+two things about the set should survive future edits. **`classic` stays first**:
+it is the only palette built from the 16 ANSI colours, and on a terminal
+limited to those the hex palettes are approximated to the nearest of eight,
+which merges hues chosen to be distinct. The default therefore has to be the
+one that cannot degrade. And **within a palette the three wind colours are
+separated by hue, not lightness** — they share a plot, they overlap, and the
+renderer resolves an overlap by last writer wins, so two traces alike in hue
+become one trace of ambiguous ownership. The gas has a plot to itself and only
+has to be legible against the background the app never paints over.
+
 `LiveState.sigma_w` and `LiveState.tke` are computed from data the parser
 already has: sonicshow reports each component as `mean(stdev)`, so TKE is one
 multiply-add over three numbers. **Any label that quotes them must mention the
