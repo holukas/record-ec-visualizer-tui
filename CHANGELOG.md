@@ -3,28 +3,60 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v0.3.0 | 19 Aug 2026
+
+### Added
+
+- One time range for both plots, moved with `-` and `+` through 15, 30, 60, 120
+  and 240 seconds, default 60. History was a count of samples before, so the
+  same buffer held four minutes of a 1 Hz sonic and one minute of a 20 Hz
+  analyzer, and the two plots could not be read against each other. The range
+  starts short and grows with the data, and widening it later uncovers older
+  data rather than blank space. Both windows end at the same moment, so a
+  stream that stops scrolls out instead of holding its last trace against the
+  edge.
+- `c` cycles four colour sets. `classic` is the default and the only one built
+  from the 16 ANSI colours; on a terminal limited to those the others are
+  approximated to the nearest of eight, which merges hues picked to be
+  distinct. `okabe` is Okabe-Ito, readable with the common forms of colour
+  blindness. `aurora` and `dusk` are quieter and louder.
+- The header shows the version, so a screenshot says which build drew it.
+- `--glyphs blocks` draws the plots with half blocks, for terminals whose font
+  has no braille. The Linux console prompted it: its font holds at most 512
+  glyphs and no braille, and the braille blank is U+2800 rather than a space,
+  so every empty cell becomes a replacement box. Half blocks halve the
+  resolution both ways, so the mode is never automatic; nothing here can tell a
+  console that cannot draw braille from one that can.
 
 ### Changed
 
-- Frames are 10-20% cheaper to draw. The renderer used to append to a `Text`
-  once per run of same-styled cells, and a wiggly trace breaks into hundreds of
-  short runs; it now assembles the whole frame as one string plus a list of
-  spans and hands it over once. Scanning a series for its finite samples, its
-  per-column envelope and the bounds of its axis is also one walk now instead
-  of three, so a dense series never builds the points the dot grid could not
-  have shown. The output is unchanged, checked over 66 renders covering both
-  glyph sets, three geometries and eleven series shapes.
-
-- Both plots now step at the same moment. Each panel used to redraw when its
-  own stream delivered, so the analyzer's 20 Hz records moved the lower plot on
-  every frame while the wind plot above it, fed once a second, sat still in
-  between — two plots of the same seconds scrolling at different times, which
-  is harder to read than either would be alone. They now share one redraw
-  decision, taken when the window has scrolled by a whole dot column: the
-  smallest movement the display can show, so the rate follows the range on
-  screen rather than the stream. At 240 s that also makes the pair markedly
-  cheaper to draw than the lower plot alone used to be.
+- Both plots step at the same moment. Each panel used to redraw when its own
+  stream delivered, so the analyzer's 20 Hz records moved the lower plot on
+  every frame while the wind plot above it sat still between its once-a-second
+  messages. They now share one redraw decision, taken when the window has
+  scrolled by a whole dot column, so the rate follows the range on screen
+  rather than the stream. At 240 s the pair costs less to draw than the lower
+  plot alone used to.
+- Frames are 10-20% cheaper to draw. The renderer assembles a frame as one
+  string plus a list of spans, instead of appending once per run of
+  same-styled cells, which a wiggly trace breaks into hundreds of. Scanning a
+  series for its finite samples, its per-column envelope and its axis bounds is
+  one walk now instead of three, so a dense series never builds the points the
+  dot grid could not have shown. The output is unchanged, checked over 66
+  renders covering both glyph sets, three geometries and eleven series shapes.
+- The README's advice for plots that come out as boxes covered only the locale.
+  A UTF-8 locale is necessary but not sufficient: on the console the font is
+  the cause. Both fixes are there now, a braille console font through
+  `console-braille` and `setfont`, which keeps the full resolution, or
+  `--glyphs blocks`, which needs no font work. The first was verified on
+  Ubuntu 24.04 with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf` on an 8x16
+  console.
+- The setup guide gained a step for finding the site's `record.toml`, which
+  every step after it needs. rECorD takes it as its second argument, so the
+  running process answers it ahead of systemd or a filesystem search.
+- The guide names Ubuntu 24.04 alongside Debian 12 for the Python version
+  check, and notes that its system Python is externally managed, so pipx is the
+  only route.
 
 ### Fixed
 
@@ -32,93 +64,35 @@ Notable changes to this project, newest first. Version numbers follow
   the status bar kept calling the stream live, and the plot stayed empty
   because the name never matched. The empty panel now says so and lists the
   names the site's `var_map` actually produces, trimmed to the width it has.
-  Those names appear nowhere else on screen — the raw record carries the
-  instrument's own — so finding them meant going back to `--dump`.
-
+  They appear nowhere else on screen, since the raw record carries the
+  instrument's own, so finding them meant going back to `--dump`.
 - The gas panel labelled every variable `umol mol-1`. That is right for a CO2
-  mixing ratio and wrong for everything else the same analyzer carries — cell
-  temperature, pressure, flow rate, a diagnostic code — all of which `--gas-var`
-  will happily plot. The unit now comes from the site's `record.toml`, out of
-  `[datafile]`'s parallel `variables` and `units` lists, and the header prints
-  no unit at all when the config cannot answer.
-
-- The analyzer plot slid sideways from frame to frame, while the wind plot
-  above it grew smoothly. The cadence estimate was a moving average over
-  arrival deltas, and the window turns that estimate into a slot count which
-  the renderer spreads across the full width — so every wobble in it moved
-  every sample. Scheduling jitter is the same few milliseconds whatever the
-  rate, which makes it a large share of 50 ms and a negligible share of 1 s,
-  and that is the whole reason only the lower plot showed it. Measured on a
-  20 Hz stream with 3 ms of jitter: the trace jumped by up to 5.8% of the
-  plot's width between consecutive frames. The estimate is now the average of
-  a run of consecutive ordinary arrivals, which carries the jitter of two
-  arrivals spread over two hundred of them: worst step 0.25%, with the 1 Hz
-  panel unchanged at zero.
-
-## v0.3.0 | 19 Aug 2026
-
-### Added
-
-- `-` and `+` halve and double the plotted time range, through 15, 30, 60, 120
-  and 240 seconds, from a default of 60. Both plots always show the same range.
-  They did not before: history was kept as a count of samples, so 240 slots was
-  four minutes of a 1 Hz sonic and 1200 slots was one minute of a 20 Hz
-  analyzer. Comparing one plot against the other was guesswork.
-- Both ranges end at the same moment, rather than each at its own stream's last
-  message. A stream that stops now scrolls out of its plot, instead of holding
-  its last trace against the right edge where it looked current.
-- The range starts short and grows with the data, so the first minute is a plot
-  rather than a stub at the right edge of a blank one. Widening the range later
-  shows the older data instead of blank space, because enough history is kept
-  to fill the longest range several times over.
-- `c` cycles four colour sets. `classic` is the default and the only one built
-  from the 16 ANSI colours; a terminal limited to those approximates the rest
-  to the nearest of eight, which merges hues that were picked to be distinct.
-  `okabe` is Okabe-Ito, which stays readable with the common forms of colour
-  blindness. `aurora` and `dusk` are quieter and louder.
-- The header shows the version next to the source description, so a screenshot
-  from a logging host says which build drew it.
-- `--glyphs blocks` draws the plots with half blocks instead of braille, for
-  terminals whose font has no braille block. The case that prompted it is the
-  Linux virtual console on the logging host: its default console font holds at
-  most 512 glyphs and no braille at all, so a braille plot fills the screen with
-  replacement boxes — including every blank cell, since the blank is U+2800
-  rather than a space. Half blocks cost half the vertical and half the
-  horizontal resolution, so the mode is never selected automatically; a
-  terminal that cannot draw braille looks the same from here as one that can,
-  and guessing wrong would quietly halve a display that was fine.
-
-### Fixed
-
-- The analyzer plot degenerated into mostly holes on a host that could not
-  render as fast as the stream arrives, and the header shrank to "last 2 s"
-  when it should have said 60. `SeriesBuffer` learned its cadence from arrival
-  times, which describe the stream only while the consumer keeps up: a frame
-  that outlasts one sampling interval blocks the event loop and the queued
-  records then arrive back to back. Those near-zero deltas dragged the estimate
-  down, which made every ordinary arrival afterwards look like an outage, which
-  padded hundreds of `nan` slots and never fed the estimate back up. A one-way
-  ratchet, and indistinguishable on screen from a failing analyzer. The
-  estimate is now bounded from below by the same `gap_factor` that bounds it
-  from above, and warm-up measures the overall rate over two seconds rather
-  than trusting a single delta.
-
-### Changed
-
-- The README's advice for plots that come out as boxes covered only the locale.
-  A UTF-8 locale is necessary but not sufficient: on the console the font is
-  the cause, and no locale setting fixes it. It now covers both fixes: giving
-  the console a braille font with `console-braille` and `setfont`, which keeps
-  the full resolution, and `--glyphs blocks`, which needs no font work. The
-  first was verified on Ubuntu 24.04 with `Lat15-Fixed16.psf.gz` and
-  `brl-16x8.psf` on an 8x16 console.
-- The setup guide gained a step for finding the site's `record.toml`. Every
-  step after it needs that path, and the guide had assumed the reader knew it.
-  rECorD takes it as its second argument, so the running process is the
-  authoritative answer, ahead of both systemd and a filesystem search.
-- The guide names Ubuntu 24.04 alongside Debian 12 for the Python version
-  check, and notes that its system Python is externally managed, which makes
-  pipx the only route rather than the tidy one.
+  mixing ratio and wrong for the cell temperature, pressure, flow rate and
+  diagnostic codes the same analyzer carries, all of which `--gas-var` will
+  happily plot. The unit now comes from the parallel `variables` and `units`
+  lists in `[datafile]` of the site's `record.toml`, and the header prints no
+  unit at all when the config cannot answer.
+- The analyzer plot slid sideways from frame to frame while the wind plot above
+  it grew smoothly. The cadence estimate was a moving average over arrival
+  deltas, and the window turns that estimate into a slot count which the
+  renderer spreads across the full width, so every wobble in it moved every
+  sample. Scheduling jitter is the same few milliseconds whatever the rate,
+  which makes it a large share of 50 ms and a negligible share of 1 s, and that
+  is why only the lower plot showed it. Measured on a 20 Hz stream with 3 ms of
+  jitter, the trace jumped by up to 5.8% of the plot's width between
+  consecutive frames. The estimate is now the average of a run of consecutive
+  ordinary arrivals, which spreads the jitter of two arrivals over two hundred
+  of them: worst step 0.25%, with the 1 Hz panel unchanged at zero.
+- The analyzer plot degenerated into holes on a host that could not render as
+  fast as the stream arrives, and the header shrank to "last 2 s" instead of
+  60. `SeriesBuffer` learned its cadence from arrival times, which describe the
+  stream only while the consumer keeps up: a slow frame blocks the event loop,
+  and the queued records then arrive back to back. Those near-zero deltas
+  dragged the estimate down, ordinary arrivals afterwards looked like outages,
+  and the hundreds of `nan` slots they padded never fed the estimate back up. A
+  one-way ratchet, indistinguishable on screen from a failing analyzer. The
+  estimate is now bounded below by the same `gap_factor` that bounds it above,
+  and warm-up measures the rate over two seconds rather than one delta.
 
 ## v0.2.1 | 18 Aug 2026
 
