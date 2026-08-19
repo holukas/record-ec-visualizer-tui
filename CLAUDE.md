@@ -101,6 +101,21 @@ Together they took a refresh from ~52 ms/s to ~20 ms/s. Measure before changing
 anything on this path: the first guess, that segment drawing dominated, turned
 out to be wrong.
 
+What a cell is drawn from is a `plot.GlyphSet`: `BRAILLE` (2x4 dots per cell)
+and `BLOCKS` (1x2, half blocks), selected with `--glyphs`. The fallback exists
+because the Linux virtual console on the logging host renders with a
+console-setup font of 256 or 512 glyphs containing no braille, so a braille
+plot there is not merely plain but unreadable — its blank cell is U+2800, so
+every empty cell of the grid becomes a replacement box and the trace vanishes
+among them. Two things about it should survive future edits. **It is never
+selected automatically**: nothing at this level distinguishes a terminal that
+cannot draw braille from one that can, and guessing wrong would silently halve
+the resolution of a display that was fine. And **the geometry stays bound as
+default arguments on `set_dot`**, not read off the dataclass per call — that
+closure is the innermost operation in the renderer, and the reason the table
+lookup is flattened in the first place is that attribute access there is not
+free.
+
 Two correctness rules follow from the plot's x axis being **sample-indexed**,
 not time-indexed. Both are easy to undo by accident:
 

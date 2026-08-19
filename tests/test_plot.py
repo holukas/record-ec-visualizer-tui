@@ -2,8 +2,15 @@ import math
 
 from rich.text import Text
 
-from record_ec_visualizer_tui.tui.plot import BRAILLE_BASE, render_braille_plot
-
+from record_ec_visualizer_tui.tui.plot import (
+    BLOCK_FULL,
+    BLOCK_LOWER,
+    BLOCK_UPPER,
+    BLOCKS,
+    BRAILLE,
+    BRAILLE_BASE,
+    render_braille_plot,
+)
 
 def _braille_only(text: Text) -> str:
     return "".join(ch for ch in text.plain if ord(ch) >= BRAILLE_BASE)
@@ -118,3 +125,57 @@ class TestDenseSeries:
         gap_dots = sum(ord(ch) != BRAILLE_BASE for ch in _braille_only(with_gap))
         full_dots = sum(ord(ch) != BRAILLE_BASE for ch in _braille_only(without_gap))
         assert gap_dots < full_dots
+
+
+class TestBlocksGlyphSet:
+    """The fallback for terminals whose font has no braille block.
+
+    The Linux virtual console on the logging host is one of them, and there a
+    braille plot is not merely plain but unreadable: its blank cell is U+2800,
+    a glyph the console font does not have either, so every empty cell of the
+    grid draws as a replacement box and the plot disappears into them.
+    """
+
+    def test_draws_nothing_a_console_font_lacks(self):
+        plot = render_braille_plot(
+            [{"y": [math.sin(index / 5.0) for index in range(200)]}],
+            width=40,
+            height=6,
+            glyphs=BLOCKS,
+        )
+        drawn = set(plot.plain) - set("0123456789.-, \n")
+        assert drawn <= {BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL, "│"}
+
+    def test_blank_cells_are_spaces_not_blank_braille(self):
+        plot = render_braille_plot([{"y": [0.0, 1.0]}], width=20, height=6, glyphs=BLOCKS)
+        assert not any(ord(ch) >= BRAILLE_BASE for ch in plot.plain)
+
+    def test_grid_has_requested_height(self):
+        plot = render_braille_plot([{"y": list(range(20))}], width=20, height=5, glyphs=BLOCKS)
+        assert len(plot.plain.split("\n")) == 5
+
+    def test_draws_something(self):
+        plot = render_braille_plot([{"y": [0, 1, 0, 1]}], width=20, height=4, glyphs=BLOCKS)
+        assert any(ch in (BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL) for ch in plot.plain)
+
+    def test_rows_are_as_wide_as_the_braille_version(self):
+        # Halved resolution must not mean a differently sized plot: the panel
+        # budgets its columns before the glyph set gets a say.
+        series = [{"y": [math.sin(index / 5.0) for index in range(200)]}]
+        braille = render_braille_plot(series, width=40, height=6, glyphs=BRAILLE)
+        blocks = render_braille_plot(series, width=40, height=6, glyphs=BLOCKS)
+        assert [len(row) for row in blocks.plain.split("\n")] == [
+            len(row) for row in braille.plain.split("\n")
+        ]
+
+    def test_a_dropout_still_reads_as_a_gap(self):
+        # Half the horizontal resolution, so the hole is narrower — but a hole
+        # it must remain, since for EC data the gap is the thing worth seeing.
+        values: list[float | None] = [1.0] * 600 + [None] * 80 + [1.0] * 600
+        with_gap = render_braille_plot([{"y": values}], width=60, height=8, glyphs=BLOCKS)
+        without_gap = render_braille_plot([{"y": [1.0] * 1280}], width=60, height=8, glyphs=BLOCKS)
+        assert with_gap.plain.count(" ") > without_gap.plain.count(" ")
+
+    def test_empty_series_still_shows_the_message(self):
+        plot = render_braille_plot([], empty_message="nothing yet", glyphs=BLOCKS)
+        assert plot.plain == "nothing yet"

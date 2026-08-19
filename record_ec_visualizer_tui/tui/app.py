@@ -25,7 +25,7 @@ from textual.widgets import Footer, Header, Static
 from record_ec_visualizer_tui.codec import DecodeError, parse_ga_message, parse_show_message
 from record_ec_visualizer_tui.model import WIND_RAW_KEYS, LiveState, StreamHealth
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM
-from record_ec_visualizer_tui.tui.plot import render_braille_plot
+from record_ec_visualizer_tui.tui.plot import BRAILLE, GlyphSet, render_braille_plot
 
 WIND_COLORS = {"Wc1": "bright_cyan", "Wc2": "bright_magenta", "Wc3": "bright_yellow"}
 GAS_COLOR = "bright_green"
@@ -49,7 +49,10 @@ WIDTH_FOR_DEVIATIONS = 116
 
 
 class StreamPanel(Static):
-    """A header line plus a braille plot, sized to whatever space it is given."""
+    """A header line plus a plot, sized to whatever space it is given."""
+
+    #: Set once by the app; the choice never changes while running.
+    glyphs: GlyphSet = BRAILLE
 
     def draw(
         self,
@@ -74,6 +77,7 @@ class StreamPanel(Static):
                 height=plot_height,
                 label_width=LABEL_WIDTH,
                 empty_message=empty_message,
+                glyphs=self.glyphs,
             )
         )
         self.update(text)
@@ -121,10 +125,12 @@ class VisualizerApp(App[None]):
         state: LiveState,
         subtitle: str = "",
         refresh_hz: float = 8.0,
+        glyphs: GlyphSet = BRAILLE,
     ) -> None:
         super().__init__()
         self._lines = lines
         self.state = state
+        self.glyphs = glyphs
         self.paused = False
         self._refresh_interval = 1.0 / max(0.5, refresh_hz)
         self.sub_title = subtitle
@@ -132,8 +138,10 @@ class VisualizerApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield StreamPanel(id="wind-plot", classes="plot")
-            yield StreamPanel(id="gas-plot", classes="plot")
+            for panel_id in ("wind-plot", "gas-plot"):
+                panel = StreamPanel(id=panel_id, classes="plot")
+                panel.glyphs = self.glyphs
+                yield panel
             yield StatusBar(id="status")
         yield Footer()
 

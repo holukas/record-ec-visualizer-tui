@@ -3,6 +3,33 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `--glyphs blocks` draws the plots with half blocks instead of braille, for
+  terminals whose font has no braille block. The case that prompted it is the
+  Linux virtual console on the logging host: its console font carries 256 or
+  512 glyphs and no braille at all, so a braille plot fills the screen with
+  replacement boxes — including every blank cell, since the blank is U+2800
+  rather than a space. Half blocks cost half the vertical and half the
+  horizontal resolution, so the mode is never selected automatically; a
+  terminal that cannot draw braille looks the same from here as one that can,
+  and guessing wrong would quietly halve a display that was fine.
+
+### Changed
+
+- The README's advice for plots that come out as boxes covered only the locale.
+  A UTF-8 locale is necessary but not sufficient: on the console the font is
+  the cause, and no locale setting fixes it.
+- The setup guide gained a step for finding the site's `record.toml`. Every
+  step after it needs that path, and the guide had assumed the reader knew it.
+  rECorD takes it as its second argument, so the running process is the
+  authoritative answer, ahead of both systemd and a filesystem search.
+- The guide names Ubuntu 24.04 alongside Debian 12 for the Python version
+  check, and notes that its system Python is externally managed, which makes
+  pipx the only route rather than the tidy one.
+
 ## v0.2.1 | 18 Aug 2026
 
 Documentation and packaging. Nothing in the program changed.

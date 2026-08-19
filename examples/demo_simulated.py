@@ -24,6 +24,7 @@ from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import simulated_lines
 from record_ec_visualizer_tui.tui.app import VisualizerApp
+from record_ec_visualizer_tui.tui.plot import BLOCKS, BRAILLE  # noqa: F401 - BLOCKS is a knob
 
 #: Seed the generator so a run is reproducible. None gives a different run each time.
 SEED: int | None = 0
@@ -40,6 +41,11 @@ DROPOUT_LENGTH_S = 4.0
 #: Which analyzer variable to plot. "CO2" is the mixing ratio in umol mol-1;
 #: "CO2_CONC" would be the molar density the same record also carries.
 GAS_VAR = "CO2"
+
+#: What the plots are drawn from. BRAILLE unless the terminal's font has no
+#: braille block — the Linux virtual console is the case that matters — where
+#: it draws as rows of boxes and BLOCKS is readable at half the resolution.
+GLYPHS = BRAILLE
 
 
 def build_app() -> VisualizerApp:
@@ -59,7 +65,7 @@ def build_app() -> VisualizerApp:
     )
 
     lines = simulated_lines(RecordSimulator(config), speedup=SPEEDUP)
-    return VisualizerApp(lines, state, subtitle=f"simulated · {config.ga_name}")
+    return VisualizerApp(lines, state, subtitle=f"simulated · {config.ga_name}", glyphs=GLYPHS)
 
 
 if __name__ == "__main__":

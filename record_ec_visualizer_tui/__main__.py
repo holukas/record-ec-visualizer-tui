@@ -38,6 +38,7 @@ from record_ec_visualizer_tui.sources import (
     simulated_lines,
 )
 from record_ec_visualizer_tui.tui.app import VisualizerApp
+from record_ec_visualizer_tui.tui.plot import GLYPH_SETS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +61,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--gas-var",
         default="CO2",
         help="site variable to plot from the analyzer stream (default: CO2, a mixing ratio)",
+    )
+    parser.add_argument(
+        "--glyphs",
+        choices=sorted(GLYPH_SETS),
+        default="braille",
+        help=(
+            "characters the plots are drawn from (default: braille). Use 'blocks' "
+            "on a terminal whose font has no braille, such as the Linux virtual "
+            "console, where braille plots come out as rows of boxes; it costs half "
+            "the resolution, so it is never selected automatically"
+        ),
     )
 
     simulated = parser.add_argument_group("demo source (--demo)")
@@ -227,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return 0
 
-    VisualizerApp(lines, state, subtitle=subtitle).run()
+    VisualizerApp(lines, state, subtitle=subtitle, glyphs=GLYPH_SETS[args.glyphs]).run()
     return 0
 
 

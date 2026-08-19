@@ -88,6 +88,23 @@ def test_dump_shows_the_var_mapped_gas_record(capsys):
     assert "'CO2_CONC': 16.2" in out
 
 
+def test_glyphs_belongs_to_neither_source():
+    """``--glyphs`` describes the terminal, not where the data comes from.
+
+    Every other option here belongs to exactly one source and is rejected
+    against the other. This one has to work with both: the console that cannot
+    draw braille is the same console whether it is showing the demo or the
+    site, and the demo is how the operator finds out that it cannot.
+    """
+    from record_ec_visualizer_tui import __main__ as cli
+
+    parser = cli.build_parser()
+    for argv in (["--demo", "--glyphs", "blocks"], ["--record-config", "record.toml", "--glyphs", "blocks"]):
+        args = parser.parse_args(argv)
+        cli._reject_crossed_options(args, parser)  # must not raise
+        assert args.glyphs == "blocks"
+
+
 @pytest.mark.parametrize(
     "argv, expected",
     [

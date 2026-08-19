@@ -13,12 +13,20 @@ from record_ec_visualizer_tui.tui.app import (
     VisualizerApp,
     _header_line,
 )
-from record_ec_visualizer_tui.tui.plot import BRAILLE_BASE
+from record_ec_visualizer_tui.tui.plot import (
+    BLOCK_FULL,
+    BLOCK_LOWER,
+    BLOCK_UPPER,
+    BLOCKS,
+    BRAILLE,
+    BRAILLE_BASE,
+    GlyphSet,
+)
 
 BRAILLE_BLANK = chr(BRAILLE_BASE)
 
 
-def _build() -> tuple[VisualizerApp, LiveState]:
+def _build(glyphs: GlyphSet = BRAILLE) -> tuple[VisualizerApp, LiveState]:
     config = SimulationConfig()
     state = LiveState(
         gas_var="CO2",
@@ -29,6 +37,7 @@ def _build() -> tuple[VisualizerApp, LiveState]:
         simulated_lines(RecordSimulator(config), speedup=40.0),
         state,
         subtitle="test",
+        glyphs=glyphs,
     )
     return app, state
 
@@ -58,6 +67,31 @@ def test_app_ingests_and_renders_both_streams():
     # Something was actually drawn, not just an empty braille grid.
     assert any(ch > BRAILLE_BLANK for ch in wind), "wind plot is blank"
     assert any(ch > BRAILLE_BLANK for ch in gas), "gas plot is blank"
+
+
+def test_blocks_glyphs_reach_the_panels():
+    """``--glyphs blocks`` has to survive the trip from the CLI to the cells.
+
+    The mode exists for the Linux virtual console attached to the logging host,
+    where a braille plot draws as rows of replacement boxes. A plot that still
+    contained one braille character would be just as unreadable there, so the
+    check is that none is left, not that blocks appeared.
+    """
+
+    async def scenario() -> tuple[str, str]:
+        app, _ = _build(glyphs=BLOCKS)
+        async with app.run_test(size=(100, 32)) as pilot:
+            await asyncio.sleep(2.0)
+            await pilot.pause()
+            wind = _plain(app.query_one("#wind-plot", StreamPanel))
+            gas = _plain(app.query_one("#gas-plot", StreamPanel))
+        return wind, gas
+
+    wind, gas = asyncio.run(scenario())
+
+    for name, drawn in (("wind", wind), ("gas", gas)):
+        assert not any(ch >= BRAILLE_BLANK for ch in drawn), f"{name} plot still has braille"
+        assert any(ch in (BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL) for ch in drawn), f"{name} plot is blank"
 
 
 def test_wind_header_reports_turbulence():

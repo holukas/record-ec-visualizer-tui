@@ -1,4 +1,4 @@
-"""Braille-cell line plots rendered into a ``rich.text.Text``.
+"""Sub-cell line plots rendered into a ``rich.text.Text``.
 
 Same approach and public shape as bico's ``bico/tui/plot.py``: a plain function
 that turns a list of series into styled text, with no widget or library beyond
@@ -11,11 +11,22 @@ Braille dot-to-bit layout inside one cell::
     (0,1) (1,1)      bit 1   bit 4
     (0,2) (1,2)      bit 2   bit 5
     (0,3) (1,3)      bit 6   bit 7
+
+Which glyphs a cell is drawn from is a :class:`GlyphSet`, because braille is not
+available everywhere. The Linux virtual console — the monitor attached to the
+logging host — renders with a console-setup font holding 256 or 512 glyphs and
+no braille block at all, so every cell of a braille plot, including the blank
+ones, comes out as a replacement box. :data:`BLOCKS` draws the same plot from
+half blocks instead, which those fonts do carry, at half the vertical and half
+the horizontal resolution. It is never selected automatically: a terminal that
+cannot draw braille is indistinguishable at this level from one that can, and
+guessing wrong would silently halve the resolution of a display that was fine.
 """
 from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from rich.text import Text
@@ -30,6 +41,45 @@ _DOT_MASKS = tuple(1 << _DOT_BITS[x][y] for x in (0, 1) for y in (0, 1, 2, 3))
 
 #: Every braille cell, precomputed. Cheaper than chr() per cell per frame.
 _BRAILLE_CELLS = tuple(chr(BRAILLE_BASE + value) for value in range(256))
+
+#: Upper half block, lower half block, full block. Written as escapes for the
+#: same reason the rest of this package sticks to ASCII source: these are the
+#: characters most likely to be mangled by a terminal or editor that is not
+#: sure what encoding it is looking at.
+BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL = "\u2580", "\u2584", "\u2588"
+
+#: Half-block cells, indexed the same way: bit 0 is the top half, bit 1 the
+#: bottom. A blank cell is a plain space, not a blank glyph as in braille.
+_BLOCK_CELLS = (" ", BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL)
+
+
+@dataclass(frozen=True)
+class GlyphSet:
+    """How many dots fit in a terminal cell, and what to draw them with.
+
+    ``masks`` is indexed ``(dot_x & (dots_x - 1)) * dots_y + (dot_y & (dots_y - 1))``
+    and ``cells`` by the resulting bit pattern, which is the same flattened
+    lookup the braille renderer always used. ``shift_x``/``shift_y`` turn a dot
+    coordinate into a cell coordinate.
+    """
+
+    name: str
+    dots_x: int
+    dots_y: int
+    shift_x: int
+    shift_y: int
+    masks: tuple[int, ...]
+    cells: tuple[str, ...]
+
+
+#: 2x4 dots per cell. The default, and the reason the plots look like plots.
+BRAILLE = GlyphSet("braille", 2, 4, 1, 2, _DOT_MASKS, _BRAILLE_CELLS)
+
+#: 1x2 dots per cell, for terminals whose font has no braille.
+BLOCKS = GlyphSet("blocks", 1, 2, 0, 1, (1, 2), _BLOCK_CELLS)
+
+#: Selectable by name from the command line.
+GLYPH_SETS = {glyphs.name: glyphs for glyphs in (BRAILLE, BLOCKS)}
 
 
 def _fmt(value: float) -> str:
@@ -149,8 +199,9 @@ def render_braille_plot(
     y_max: float | None = None,
     label_width: int = 9,
     empty_message: str = "waiting for data",
+    glyphs: GlyphSet = BRAILLE,
 ) -> Text:
-    """Render ``series`` as a braille line plot.
+    """Render ``series`` as a line plot.
 
     :param series: one dict per line, with ``y`` (a sequence of values, where
         ``None``/``nan`` means "no sample") and optional ``color``.
@@ -161,11 +212,13 @@ def render_braille_plot(
         across, which matters when the gap *is* the thing worth seeing.
     :param y_min: fix the lower bound of the axis instead of deriving it.
     :param y_max: fix the upper bound of the axis instead of deriving it.
+    :param glyphs: what to draw the cells from. :data:`BRAILLE` unless the
+        terminal's font cannot show it, in which case :data:`BLOCKS`.
     """
     width = max(8, int(width))
     height = max(1, int(height))
-    dot_cols = width * 2
-    dot_rows = height * 4
+    dot_cols = width * glyphs.dots_x
+    dot_rows = height * glyphs.dots_y
 
     all_points = [(spec, _finite_points(spec.get("y") or ())) for spec in series]
     values = [value for _, points in all_points for _, value in points]
@@ -207,11 +260,24 @@ def render_braille_plot(
             scaled = (high - value) / (high - low)
             return min(dot_rows - 1, max(0, int(round(scaled * (dot_rows - 1)))))
 
-        def set_dot(dot_x: int, dot_y: int, color: str | None = color) -> None:
+        # The glyph set's geometry is bound as default arguments rather than
+        # read off the dataclass per call: this runs several thousand times a
+        # frame, and an attribute lookup here is not free.
+        def set_dot(
+            dot_x: int,
+            dot_y: int,
+            color: str | None = color,
+            shift_x: int = glyphs.shift_x,
+            shift_y: int = glyphs.shift_y,
+            mask_x: int = glyphs.dots_x - 1,
+            mask_y: int = glyphs.dots_y - 1,
+            dots_y: int = glyphs.dots_y,
+            masks: tuple[int, ...] = glyphs.masks,
+        ) -> None:
             if not (0 <= dot_x < dot_cols and 0 <= dot_y < dot_rows):
                 return
-            cell_x, cell_y = dot_x >> 1, dot_y >> 2
-            bits[cell_y][cell_x] |= _DOT_MASKS[(dot_x & 1) * 4 + (dot_y & 3)]
+            cell_x, cell_y = dot_x >> shift_x, dot_y >> shift_y
+            bits[cell_y][cell_x] |= masks[(dot_x & mask_x) * dots_y + (dot_y & mask_y)]
             if color is not None:
                 colors[cell_y][cell_x] = color
 
@@ -245,13 +311,14 @@ def render_braille_plot(
         row_colors = colors[row]
         run_style = row_colors[0]
         run: list[str] = []
+        cells = glyphs.cells
         for column in range(width):
             style = row_colors[column]
             if style != run_style:
                 out.append("".join(run), style=run_style or None)
                 run = []
                 run_style = style
-            run.append(_BRAILLE_CELLS[row_bits[column]])
+            run.append(cells[row_bits[column]])
         out.append("".join(run), style=run_style or None)
         if row < height - 1:
             out.append("\n")

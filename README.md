@@ -96,6 +96,11 @@ plotted variable leave a gap in the line instead of repeating the last value.
 it, all analyzer streams are read and drawn as a single line using the first
 analyzer's `var_map`.
 
+`--glyphs blocks` draws the plots with half blocks instead of braille, for
+terminals whose font has no braille block. The Linux virtual console — the
+monitor attached to the logging host — is the one that matters; see
+[Run the demo once](#run-the-demo-once).
+
 Check that the streams arrive before starting the display, as described under
 [Check the connection first](#check-the-connection-first).
 
@@ -157,9 +162,10 @@ uv run pytest -q && uv run ruff check .
 ## Setting it up on the logging host
 
 The streams stay on the machine rECorD runs on, so the visualizer has to be
-installed there as well. There are four steps: install, run the demo, check the
-connection with `--dump`, then start the display. Keeping them separate means a
-failure points at one cause rather than several.
+installed there as well. There are five steps: install, run the demo, find the
+site's `record.toml`, check the connection with `--dump`, then start the
+display. Keeping them separate means a failure points at one cause rather than
+several.
 
 Two things to check first. The Python version has to be 3.11 or newer:
 
@@ -167,10 +173,10 @@ Two things to check first. The Python version has to be 3.11 or newer:
 python3 --version
 ```
 
-Debian 12 ships 3.11, so on the usual logging host this passes; if it does not,
-use the uv fallback at the end of this section. Second, run everything below as
-the user that runs rECorD, for the reasons given under
-[Running it day to day](#running-it-day-to-day).
+Debian 12 ships 3.11 and Ubuntu 24.04 ships 3.12, so on the usual logging host
+this passes; if it does not, use the uv fallback at the end of this section.
+Second, run everything below as the user that runs rECorD, for the reasons given
+under [Running it day to day](#running-it-day-to-day).
 
 ### Install
 
@@ -180,6 +186,9 @@ works here too:
 ```bash
 pipx install git+https://github.com/holukas/record-ec-visualizer-tui.git
 ```
+
+On Ubuntu 24.04 pipx is not merely the tidy choice but the only one: the system
+Python is marked externally managed, so `pip install` into it is refused.
 
 On a host without outbound network access, build the wheel elsewhere and copy it
 over together with its dependencies. The wheel on its own is not enough, since
@@ -220,8 +229,70 @@ record-ec-visualizer-tui --demo
 ```
 
 If two plots draw and move, the installation, the terminal and the locale are
-all fine. If the plots appear as rows of boxes instead of braille, set a UTF-8
-locale (`LANG=C.UTF-8` or similar).
+all fine.
+
+If the plots appear as rows of boxes instead of braille, the terminal cannot
+draw the characters the plots are made of. There are two causes and they need
+different fixes.
+
+The cheap one is the locale. Check it with `locale`; if `LANG` is `C` or
+`POSIX` rather than something ending in `UTF-8`, set `LANG=C.UTF-8`. That
+locale is built into glibc, so nothing has to be generated first.
+
+The other is the font, and it is what you get on the machine's own monitor.
+The Linux virtual console draws with a console font of 256 or 512 glyphs that
+contains no braille at all, and no locale setting changes that. Confirm it with
+
+```bash
+printf 'braille: [⠀⠁⣿]  blocks: [█▄▀]\n'
+```
+
+If the braille characters are boxes while the blocks are drawn, use the
+half-block fallback:
+
+```bash
+record-ec-visualizer-tui --demo --glyphs blocks
+```
+
+`--glyphs blocks` works with a live site too, and applies to both plots. It
+costs resolution — half vertically, half horizontally, because a half block
+carries 1x2 dots where a braille cell carries 2x4 — which is why it is never
+chosen automatically. Nothing else changes: the same data, axes, header and
+gaps. Over SSH from a workstation, braille is the better picture, so prefer
+that when there is a choice.
+
+### Find the site's record.toml
+
+Everything below needs the site's config, and its location is not fixed: rECorD
+takes it as its second argument, so the running process is what knows. Ask it:
+
+```bash
+ps -eo pid,user,args | grep -i "[r]ecord"
+```
+
+The command line reads `record <SonicType> <path/to/record.toml>`. If that path
+is relative it resolves against the process's working directory:
+
+```bash
+sudo ls -l /proc/$(pgrep -f "record .*\.toml" | head -1)/cwd
+```
+
+If rECorD is started by systemd, the unit spells it out instead:
+
+```bash
+systemctl cat 'record*'
+```
+
+Failing all of that, search for it:
+
+```bash
+sudo find / -name "record.toml" -not -path "*/site-packages/*" 2>/dev/null
+```
+
+The `-not -path` is what keeps the example config that ships inside the
+`record` package out of the results. That one is stale — it writes the
+timestamp keys in a form rECorD no longer reads — and it holds no site's real
+addresses. The file on the command line is the only authoritative one.
 
 ### Check the connection first
 
@@ -259,7 +330,9 @@ tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/
 
 `--gas-var` takes the name confirmed in the `--dump` step. Omitting it selects
 the default `CO2`, which is only correct if the site's `var_map` produces that
-exact name.
+exact name. Add `--glyphs blocks` if this is the machine's own console rather
+than an SSH session, for the reason given under
+[Run the demo once](#run-the-demo-once).
 
 Run the visualizer as the user that runs rECorD. That user can already read
 `record.toml`, and the session then belongs to the account operating the logger.
@@ -311,7 +384,7 @@ line, the analyzer addresses from `record.toml`.
 | `simulator.py` | Produces rECorD-format data for the demo |
 | `sources.py` | Delivers `(stream, line)` pairs, from the simulator or from multicast |
 | `model.py` | Keeps the recent values of each series, and when each stream was last heard from |
-| `tui/plot.py` | Draws the braille line plots |
+| `tui/plot.py` | Draws the line plots, in braille or half blocks |
 | `tui/app.py` | The Textual application |
 
 `sources.py` is the boundary between live and simulated data. Everything above
