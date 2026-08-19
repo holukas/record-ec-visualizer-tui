@@ -7,6 +7,22 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Added
 
+- `-` and `+` halve and double the plotted time range, and both plots now
+  always show the same one. They did not before: history was kept as a count of
+  samples, so the same 240 slots meant four minutes of a 1 Hz sonic and the same
+  1200 slots meant one minute of a 20 Hz analyzer. Reading one plot against the
+  other was guesswork, which defeats the point of stacking them — the question
+  a viewer asks is which gust carried which peak. The range steps through 15,
+  30, 60, 120 and 240 seconds, from a default of 60. Both windows end at the
+  same moment rather than at each stream's own last message, so a stream that
+  stops scrolls out of the plot instead of freezing against the right edge
+  still looking current.
+- `c` cycles four colour sets for the traces. `classic` stays the default and
+  is the only one built from the 16 ANSI colours: a terminal limited to those
+  approximates the others to the nearest of eight, which collapses hues chosen
+  to be distinct. `okabe` is Okabe-Ito, whose separations survive the common
+  forms of colour blindness; `aurora` and `dusk` are a quieter and a louder set
+  for a dim and a bright room.
 - `--glyphs blocks` draws the plots with half blocks instead of braille, for
   terminals whose font has no braille block. The case that prompted it is the
   Linux virtual console on the logging host: its default console font holds at

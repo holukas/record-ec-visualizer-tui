@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -23,13 +24,61 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Header, Static
 
 from record_ec_visualizer_tui.codec import DecodeError, parse_ga_message, parse_show_message
-from record_ec_visualizer_tui.model import WIND_RAW_KEYS, LiveState, StreamHealth
+from record_ec_visualizer_tui.model import (
+    MAX_WINDOW_SECONDS,
+    WIND_RAW_KEYS,
+    LiveState,
+    StreamHealth,
+)
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM
 from record_ec_visualizer_tui.tui.plot import BRAILLE, GlyphSet, render_braille_plot
 
-WIND_COLORS = {"Wc1": "bright_cyan", "Wc2": "bright_magenta", "Wc3": "bright_yellow"}
-GAS_COLOR = "bright_green"
 LABEL_WIDTH = 8
+
+
+@dataclass(frozen=True)
+class Palette:
+    """The four trace colours: three wind components, then the gas.
+
+    Four is the whole display, so a palette is judged as a set rather than
+    colour by colour. Two things decide one. The three wind traces share a plot
+    and overlap, and the renderer resolves an overlap by last writer wins, so
+    they have to stay apart in hue rather than only in lightness; the gas has
+    its own plot and only has to be legible. And every colour is drawn on the
+    terminal's own dark background, which the app never paints over, so nothing
+    here goes below roughly mid lightness.
+    """
+
+    name: str
+    wind: tuple[str, str, str]
+    gas: str
+
+
+#: Cycled by the palette key, first entry first.
+PALETTES = (
+    # The 16 ANSI colours, and the only palette that survives a terminal which
+    # has just those: on the Linux console the hex palettes below are
+    # approximated to the nearest of eight, which collapses hues that were
+    # chosen to be distinct. It is first because it is the one that always
+    # works.
+    Palette("classic", ("bright_cyan", "bright_magenta", "bright_yellow"), "bright_green"),
+    # Okabe-Ito, the palette designed so that the common forms of colour
+    # blindness keep the separations. The three wind values are canonical; the
+    # gas is its bluish green lightened, since #009E73 reads as nearly black
+    # against this background and it shares its plot with nothing.
+    Palette("okabe", ("#56B4E9", "#E69F00", "#F0E442"), "#00C896"),
+    # Cool and less saturated, for a long look at a screen.
+    Palette("aurora", ("#7DD3FC", "#C4B5FD", "#FDE68A"), "#6EE7B7"),
+    # Saturated and far apart, for a bright room or a projector.
+    Palette("dusk", ("#F472B6", "#818CF8", "#FBBF24"), "#34D399"),
+)
+
+#: Seconds of history both panels show, halved and doubled from the default.
+#: Both panels always take the same entry - reading one plot against the other
+#: is the point of the window existing at all.
+WINDOW_STEPS = (15.0, 30.0, 60.0, 120.0, MAX_WINDOW_SECONDS)
+#: An index into the ladder, not a duration.
+DEFAULT_WINDOW_INDEX = WINDOW_STEPS.index(60.0)
 
 #: Below these widths the header sheds its least important parts rather than
 #: wrapping, which would cost a plot row. Each optional part carries its own
@@ -117,6 +166,10 @@ class VisualizerApp(App[None]):
         ("q", "quit", "Quit"),
         ("space", "toggle_pause", "Pause"),
         ("r", "reset", "Reset series"),
+        ("c", "cycle_palette", "Colours"),
+        # equals_sign as well as plus, so widening does not need the shift key.
+        ("minus", "shrink_window", "Range -"),
+        ("plus,equals_sign", "grow_window", "Range +"),
     ]
 
     def __init__(
@@ -132,8 +185,23 @@ class VisualizerApp(App[None]):
         self.state = state
         self.glyphs = glyphs
         self.paused = False
+        # Indices rather than the values themselves: both are cheap to fold
+        # into the redraw tokens below, which is what makes a keypress show up
+        # without a message having to arrive first.
+        self._palette = 0
+        self._window = DEFAULT_WINDOW_INDEX
         self._refresh_interval = 1.0 / max(0.5, refresh_hz)
         self.sub_title = subtitle
+
+    @property
+    def palette(self) -> Palette:
+        """The colours in force. Not ``theme``: Textual's ``App`` owns that."""
+        return PALETTES[self._palette]
+
+    @property
+    def window_seconds(self) -> float:
+        """How much history both panels draw."""
+        return WINDOW_STEPS[self._window]
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -151,8 +219,8 @@ class VisualizerApp(App[None]):
         self._wind_panel = self.query_one("#wind-plot", StreamPanel)
         self._gas_panel = self.query_one("#gas-plot", StreamPanel)
         self._status_bar = self.query_one("#status", StatusBar)
-        self._wind_drawn: tuple[int, int, int] | None = None
-        self._gas_drawn: tuple[int, int, int] | None = None
+        self._wind_drawn: tuple[int, ...] | None = None
+        self._gas_drawn: tuple[int, ...] | None = None
 
         self.run_worker(self._consume(), name="stream-reader", exclusive=True)
         self.set_interval(self._refresh_interval, self._refresh)
@@ -183,8 +251,27 @@ class VisualizerApp(App[None]):
         rECorD's 20 Hz acquisition loop.
         """
         state = self.state
+        palette = self.palette
+        window = self.window_seconds
+        # One clock for both panels: the window each draws ends here rather
+        # than at its own last arrival, which is what keeps a stalled stream
+        # from drawing a healthy trace a whole window out of phase.
+        now = state.elapsed
 
-        wind_token = (state.sonic_health.messages, *self._wind_panel.size)
+        # The palette and the window belong in the token because neither one
+        # changes the message count or the size, and a keypress that redrew
+        # nothing until the next message would look like it had not worked.
+        # The whole second does too, and for the opposite reason: a stream that
+        # has gone silent delivers no messages, and its trace has to keep
+        # scrolling out of the window rather than freeze mid-plot.
+        second = int(now)
+        wind_token = (
+            state.sonic_health.messages,
+            *self._wind_panel.size,
+            self._palette,
+            self._window,
+            second,
+        )
         if wind_token != self._wind_drawn:
             self._wind_drawn = wind_token
             # Component names carry their series colour, so the header is the legend.
@@ -200,30 +287,36 @@ class VisualizerApp(App[None]):
             self._wind_panel.draw(
                 title="wind",
                 chips=[
-                    (state.label_for(key), _number(state.wind[key].latest, "6.2f"), WIND_COLORS[key])
-                    for key in WIND_RAW_KEYS
+                    (state.label_for(key), _number(state.wind[key].latest, "6.2f"), color)
+                    for key, color in zip(WIND_RAW_KEYS, palette.wind)
                 ],
                 parts=[
                     (f"m s-1   sd {deviations}", WIDTH_FOR_DEVIATIONS),
                     (turbulence, WIDTH_FOR_TURBULENCE),
                 ],
-                meta=f"1 Hz sonicshow  ·  last {state.wind[WIND_RAW_KEYS[0]].span_seconds():.0f} s",
+                meta=f"1 Hz sonicshow  ·  last {window:.0f} s",
                 series=[
-                    {"y": state.wind[key].values, "color": WIND_COLORS[key]}
-                    for key in WIND_RAW_KEYS
+                    {"y": state.wind[key].window_values(window, now), "color": color}
+                    for key, color in zip(WIND_RAW_KEYS, palette.wind)
                 ],
                 empty_message="waiting for the first sonicshow message",
             )
 
-        gas_token = (state.gas_health.messages, *self._gas_panel.size)
+        gas_token = (
+            state.gas_health.messages,
+            *self._gas_panel.size,
+            self._palette,
+            self._window,
+            second,
+        )
         if gas_token != self._gas_drawn:
             self._gas_drawn = gas_token
             self._gas_panel.draw(
                 title="gas",
-                chips=[(state.gas_var, _number(state.gas.latest, "7.2f"), GAS_COLOR)],
+                chips=[(state.gas_var, _number(state.gas.latest, "7.2f"), palette.gas)],
                 parts=[("umol mol-1", WIDTH_FOR_EXTRAS)],
-                meta=f"analyzer stream  ·  last {state.gas.span_seconds():.0f} s",
-                series=[{"y": state.gas.values, "color": GAS_COLOR}],
+                meta=f"analyzer stream  ·  last {window:.0f} s",
+                series=[{"y": state.gas.window_values(window, now), "color": palette.gas}],
                 empty_message="waiting for analyzer records",
             )
 
@@ -239,6 +332,17 @@ class VisualizerApp(App[None]):
         # Force a redraw: the series changed without a new message arriving.
         self._wind_drawn = None
         self._gas_drawn = None
+
+    def action_cycle_palette(self) -> None:
+        self._palette = (self._palette + 1) % len(PALETTES)
+
+    def action_grow_window(self) -> None:
+        """Show twice as long a stretch, up to the longest one buffered."""
+        self._window = min(self._window + 1, len(WINDOW_STEPS) - 1)
+
+    def action_shrink_window(self) -> None:
+        """Show half as long a stretch, down to the shortest one plottable."""
+        self._window = max(self._window - 1, 0)
 
 
 def _header_line(

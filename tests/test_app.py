@@ -1,14 +1,18 @@
 """Headless smoke tests: the app must actually ingest and draw."""
 import asyncio
 
+from rich.style import Style
+
 from record_ec_visualizer_tui.codec import VariableMap
 from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import simulated_lines
 from record_ec_visualizer_tui.tui.app import (
+    PALETTES,
     WIDTH_FOR_DEVIATIONS,
     WIDTH_FOR_META,
     WIDTH_FOR_TURBULENCE,
+    WINDOW_STEPS,
     StreamPanel,
     VisualizerApp,
     _header_line,
@@ -45,6 +49,51 @@ def _build(glyphs: GlyphSet = BRAILLE) -> tuple[VisualizerApp, LiveState]:
 def _plain(widget) -> str:
     rendered = widget.render()
     return rendered.plain if hasattr(rendered, "plain") else str(rendered)
+
+
+def _rightmost_ink(widget) -> int:
+    """The last plot column holding anything, or -1. Blank braille is U+2800."""
+    rightmost = -1
+    for line in _plain(widget).splitlines():
+        _, sep, cells = line.partition("│")
+        if not sep:
+            continue
+        for column, glyph in enumerate(cells):
+            if glyph != BRAILLE_BLANK:
+                rightmost = max(rightmost, column)
+    return rightmost
+
+
+async def _settle(pilot) -> None:
+    """Pause ingestion and wait out the records already in flight.
+
+    Pressing space stops the reader, but records queued before it are still
+    delivered, and each one bumps the message count that the redraw gate keys
+    on. Without waiting for that to finish, a test meant to prove a keypress
+    reached the plot would instead be riding on an arrival.
+    """
+    await pilot.press("space")
+    await asyncio.sleep(0.4)
+    await pilot.pause()
+
+
+def _colours(widget) -> set[tuple[int, int, int]]:
+    """Every colour the widget actually drew with, as rgb.
+
+    Textual spells a rendered style two ways depending on where the colour
+    came from — ``ansi_bright_green`` for a named one, ``rgb(0,200,150)``
+    for a hex one — and a palette holds both kinds. Comparing rgb keeps the
+    assertions about the colour rather than about the spelling.
+    """
+    return {
+        _rgb(str(span.style).removesuffix(" bold"))
+        for span in widget.render().spans
+        if span.style is not None
+    }
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    return tuple(Style.parse(colour.removeprefix("ansi_")).color.get_truecolor())
 
 
 def test_app_ingests_and_renders_both_streams():
@@ -182,3 +231,144 @@ def test_reset_clears_the_series():
     before, after = asyncio.run(scenario())
     assert before > 0
     assert after < before
+
+
+class TestSharedWindow:
+    """Both plots must span the same seconds, or peaks cannot be compared."""
+
+    @staticmethod
+    def _metas(app) -> tuple[str, str]:
+        wind = _plain(app.query_one("#wind-plot", StreamPanel)).splitlines()[0]
+        gas = _plain(app.query_one("#gas-plot", StreamPanel)).splitlines()[0]
+        return wind, gas
+
+    def test_both_panels_report_the_same_range(self):
+        async def scenario() -> tuple[str, str, float]:
+            app, _ = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(1.5)
+                await pilot.pause()
+                wind, gas = self._metas(app)
+                return wind, gas, app.window_seconds
+
+        wind, gas, window = asyncio.run(scenario())
+        assert window == 60.0, "the default window is one minute"
+        assert "last 60 s" in wind
+        assert "last 60 s" in gas
+
+    def test_the_range_keys_move_both_panels_together(self):
+        async def scenario() -> list[tuple[float, str, str]]:
+            app, state = _build()
+            seen = []
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(1.5)
+                # Paused, so nothing arrives to redraw the panels for us: the
+                # keys have to reach the plot on their own.
+                await _settle(pilot)
+                arrivals = state.gas_health.messages
+                for key in ("minus", "minus", "plus", "equals_sign"):
+                    await pilot.press(key)
+                    await asyncio.sleep(0.3)
+                    await pilot.pause()
+                    seen.append((app.window_seconds, *self._metas(app)))
+                assert state.gas_health.messages == arrivals, "not actually paused"
+            return seen
+
+        seen = asyncio.run(scenario())
+        assert [window for window, _, _ in seen] == [30.0, 15.0, 30.0, 60.0]
+        for window, wind, gas in seen:
+            assert f"last {window:.0f} s" in wind
+            assert f"last {window:.0f} s" in gas
+
+    def test_the_range_stops_at_both_ends(self):
+        async def scenario() -> tuple[float, float]:
+            app, _ = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(0.5)
+                for _ in range(len(WINDOW_STEPS) + 2):
+                    await pilot.press("minus")
+                await pilot.pause()
+                shortest = app.window_seconds
+                for _ in range(len(WINDOW_STEPS) + 2):
+                    await pilot.press("plus")
+                await pilot.pause()
+                return shortest, app.window_seconds
+
+        shortest, longest = asyncio.run(scenario())
+        assert shortest == min(WINDOW_STEPS)
+        assert longest == max(WINDOW_STEPS)
+
+
+    def test_a_silent_stream_scrolls_out_instead_of_freezing(self):
+        """The window ends now, not at whatever moment the stream stopped.
+
+        Anchored to the last arrival, a dead analyzer keeps drawing a full,
+        healthy-looking trace against the right edge while the header claims
+        the same seconds as the panel above it — the two plots then disagree
+        about when things happened, silently.
+        """
+
+        async def scenario() -> tuple[int, int]:
+            app, _ = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(1.5)
+                await pilot.press("minus")  # 15 s, so the trace recedes visibly
+                await pilot.press("minus")
+                await _settle(pilot)
+                first = _rightmost_ink(app.query_one("#gas-plot", StreamPanel))
+                await asyncio.sleep(3.0)
+                await pilot.pause()
+                return first, _rightmost_ink(app.query_one("#gas-plot", StreamPanel))
+
+        first, later = asyncio.run(scenario())
+        assert first > 0, "nothing was drawn to begin with"
+        assert later < first, "the trace stayed put while the stream was silent"
+
+
+class TestPalettes:
+    def test_every_palette_offers_four_distinct_colours(self):
+        for palette in PALETTES:
+            colours = [*palette.wind, palette.gas]
+            assert len(set(colours)) == 4, f"{palette.name} repeats a colour"
+
+    def test_the_key_cycles_and_wraps(self):
+        async def scenario() -> list[str]:
+            app, _ = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(0.5)
+                names = [app.palette.name]
+                for _ in range(len(PALETTES)):
+                    await pilot.press("c")
+                    await pilot.pause()
+                    names.append(app.palette.name)
+            return names
+
+        names = asyncio.run(scenario())
+        assert names[0] == PALETTES[0].name, "the ANSI-safe palette is the default"
+        assert names[: len(PALETTES)] == [palette.name for palette in PALETTES]
+        assert names[-1] == names[0], "cycling wraps back to the first"
+
+    def test_the_new_colours_reach_the_plot_without_a_new_message(self):
+        # The redraw gate keys on arrivals and size, so a palette change has to
+        # be part of what it compares or the keypress would do nothing visible.
+        async def scenario() -> tuple[set[tuple[int, int, int]], set[tuple[int, int, int]], str]:
+            app, state = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(1.5)
+                # Paused first, or the simulator's next record would redraw the
+                # panel regardless and the test would pass without the palette
+                # ever having reached the redraw gate.
+                await _settle(pilot)
+                arrivals = state.gas_health.messages
+                before = _colours(app.query_one("#gas-plot", StreamPanel))
+                await pilot.press("c")
+                await asyncio.sleep(0.3)
+                await pilot.pause()
+                after = _colours(app.query_one("#gas-plot", StreamPanel))
+                assert state.gas_health.messages == arrivals, "not actually paused"
+                return before, after, app.palette.gas
+
+        before, after, gas_colour = asyncio.run(scenario())
+        assert _rgb(PALETTES[0].gas) in before
+        assert _rgb(gas_colour) in after
+        assert _rgb(PALETTES[0].gas) not in after
