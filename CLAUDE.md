@@ -104,18 +104,33 @@ three should survive future edits:
   *is* its envelope), and cost stops scaling with history length.
 - `render_braille_plot` appends runs of same-styled cells, not one `Text.append`
   per cell. A frame is 1600+ cells and that call was 36% of render time.
-- `VisualizerApp._refresh` only redraws a panel when its stream delivered
-  something or the panel resized. sonicshow sends at 1 Hz, so redrawing the wind
-  plot on every tick wasted seven of every eight redraws.
+- `VisualizerApp._refresh` redraws only when the window has scrolled by a whole
+  dot column, which is the smallest movement the grid can express. The rate then
+  follows the range on display rather than the stream: a 15 s window steps on
+  every frame, a 240 s one about twice a second.
 
-The panels' redraw tokens carry the palette and window indices alongside the
-message count and the size. Neither key changes any of the other three, so a
-keypress would otherwise redraw nothing until the next message arrived and
-would read as a dead key.
+Measure before changing anything on this path: the first guess, that segment
+drawing dominated, turned out to be wrong.
 
-Together they took a refresh from ~52 ms/s to ~20 ms/s. Measure before changing
-anything on this path: the first guess, that segment drawing dominated, turned
-out to be wrong.
+**Both panels are drawn from one token, or neither is.** They are stacked to be
+read against each other, and two plots of the same seconds that scroll at
+different moments are harder to compare than either alone. Gating each panel on
+its own stream did that: the analyzer delivers at 20 Hz and stepped the lower
+plot every frame, while sonicshow delivers once a second and the wind plot sat
+still in between — reported from the logging host as the lower plot moving on
+its own. `test_the_two_panels_step_together` counts draws rather than comparing
+pictures, because two consecutive redraws can produce identical text.
+
+The token carries the palette and window indices and each stream's first
+message alongside the scroll position and both sizes. None of those changes the
+scroll position, so a keypress would otherwise redraw nothing until the window
+had moved on and would read as a dead key.
+
+The ledger for moving together, at the logging host's 230x30 geometry: at the
+default 60 s the pair costs ~78 ms/s against ~56 before, since the wind panel
+now redraws as often as the analyzer's; at 240 s, ~21 ms/s against ~63, since
+that window scrolls a dot column only twice a second. The saving lands where a
+frame is most expensive, and the extra cost where it is cheapest.
 
 What a cell is drawn from is a `plot.GlyphSet`: `BRAILLE` (2x4 dots per cell)
 and `BLOCKS` (1x2, half blocks), selected with `--glyphs`. The fallback exists

@@ -110,6 +110,11 @@ class StreamPanel(Static):
     #: Set once by the app; the choice never changes while running.
     glyphs: GlyphSet = BRAILLE
 
+    @property
+    def plot_width(self) -> int:
+        """Cells the trace itself is drawn across, once the axis is paid for."""
+        return max(10, max(20, self.size.width) - LABEL_WIDTH - 2)
+
     def draw(
         self,
         title: str,
@@ -120,7 +125,7 @@ class StreamPanel(Static):
         empty_message: str,
     ) -> None:
         width = max(20, self.size.width)
-        plot_width = max(10, width - LABEL_WIDTH - 2)
+        plot_width = self.plot_width
         # One row goes to the header; the rest is plot.
         plot_height = max(3, self.size.height - 1)
 
@@ -228,6 +233,19 @@ class VisualizerApp(App[None]):
         """
         return min(self.window_seconds, max(MIN_WINDOW_SECONDS, now))
 
+    def _scroll_step(self, window: float) -> float:
+        """Seconds of scrolling that move the trace by one dot column.
+
+        The two panels share one figure, taking the finer grid of the two so
+        neither is held back by the other's coarseness. Dots, not cells: a
+        braille cell is two dot columns wide and a half block one, and the
+        glyph set is what decides. Below one refresh interval this stops
+        mattering, since the token then changes on every frame anyway; the
+        floor only keeps a degenerate size from asking for a step of zero.
+        """
+        widest = max(self._wind_panel.plot_width, self._gas_panel.plot_width)
+        return max(1e-3, window / (widest * self.glyphs.dots_x))
+
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
@@ -244,8 +262,7 @@ class VisualizerApp(App[None]):
         self._wind_panel = self.query_one("#wind-plot", StreamPanel)
         self._gas_panel = self.query_one("#gas-plot", StreamPanel)
         self._status_bar = self.query_one("#status", StatusBar)
-        self._wind_drawn: tuple[int, ...] | None = None
-        self._gas_drawn: tuple[int, ...] | None = None
+        self._drawn: tuple[object, ...] | None = None
 
         self.run_worker(self._consume(), name="stream-reader", exclusive=True)
         self.set_interval(self._refresh_interval, self._refresh)
@@ -267,13 +284,29 @@ class VisualizerApp(App[None]):
                 health.mark_error(str(exc))
 
     def _refresh(self) -> None:
-        """Redraw whatever has changed.
+        """Redraw both panels, or neither.
 
-        A panel is only re-rendered when its stream has delivered something new
-        or the panel was resized. sonicshow speaks once per second, so without
-        this the wind plot would be rebuilt several times per second to draw the
-        identical picture — wasted work on a machine that is also running
-        rECorD's 20 Hz acquisition loop.
+        **One token covers both.** They are stacked to be read against each
+        other, and two plots of the same seconds that scroll at different
+        moments are harder to compare than either would be alone. Gating each
+        panel on its own stream did exactly that: the analyzer delivers at
+        20 Hz and its plot stepped on every frame, while sonicshow delivers
+        once a second and the wind plot above it sat still in between.
+
+        **A step is one dot column of scrolling**, the smallest movement the
+        grid can express: anything finer lands on the dot the trace already
+        occupies, so redrawing faster cannot move it. The rate therefore
+        follows the range on display rather than the stream — a short window
+        steps on every frame, a four-minute one about twice a second.
+
+        Moving together is not free, and the ledger is worth stating plainly on
+        a machine whose real job is rECorD's 20 Hz acquisition loop. Measured
+        on the logging host's geometry, 230 columns by 30 rows: at the default
+        60 s the pair costs ~78 ms/s against ~56 before, because the wind panel
+        now redraws as often as the analyzer's rather than once a second. At
+        240 s it costs ~21 ms/s against ~63, because that window scrolls a dot
+        column only twice a second — so the saving lands exactly where a frame
+        is most expensive.
         """
         state = self.state
         palette = self.palette
@@ -285,21 +318,21 @@ class VisualizerApp(App[None]):
         window = self.visible_seconds(now)
 
         # The palette and the window belong in the token because neither one
-        # changes the message count or the size, and a keypress that redrew
-        # nothing until the next message would look like it had not worked.
-        # The whole second does too, and for the opposite reason: a stream that
-        # has gone silent delivers no messages, and its trace has to keep
-        # scrolling out of the window rather than freeze mid-plot.
-        second = int(now)
-        wind_token = (
-            state.sonic_health.messages,
+        # changes the scroll position or the size, and a keypress that redrew
+        # nothing until the window had scrolled on would look like a dead key.
+        # So does the first message of each stream, which has to appear when it
+        # arrives rather than at the next step.
+        token = (
+            int(now / self._scroll_step(window)),
             *self._wind_panel.size,
+            *self._gas_panel.size,
             self._palette,
             self._window,
-            second,
+            state.sonic_health.messages > 0,
+            state.gas_health.messages > 0,
         )
-        if wind_token != self._wind_drawn:
-            self._wind_drawn = wind_token
+        if token != self._drawn:
+            self._drawn = token
             # Component names carry their series colour, so the header is the legend.
             deviations = " ".join(
                 _number(state.wind_stdev[key].latest, ".2f") for key in WIND_RAW_KEYS
@@ -327,16 +360,6 @@ class VisualizerApp(App[None]):
                 ],
                 empty_message="waiting for the first sonicshow message",
             )
-
-        gas_token = (
-            state.gas_health.messages,
-            *self._gas_panel.size,
-            self._palette,
-            self._window,
-            second,
-        )
-        if gas_token != self._gas_drawn:
-            self._gas_drawn = gas_token
             self._gas_panel.draw(
                 title="gas",
                 chips=[(state.gas_var, _number(state.gas.latest, "7.2f"), palette.gas)],
@@ -356,8 +379,7 @@ class VisualizerApp(App[None]):
     def action_reset(self) -> None:
         self.state.reset()
         # Force a redraw: the series changed without a new message arriving.
-        self._wind_drawn = None
-        self._gas_drawn = None
+        self._drawn = None
 
     def action_cycle_palette(self) -> None:
         self._palette = (self._palette + 1) % len(PALETTES)

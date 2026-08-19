@@ -5,6 +5,18 @@ Notable changes to this project, newest first. Version numbers follow
 
 ## Unreleased
 
+### Changed
+
+- Both plots now step at the same moment. Each panel used to redraw when its
+  own stream delivered, so the analyzer's 20 Hz records moved the lower plot on
+  every frame while the wind plot above it, fed once a second, sat still in
+  between — two plots of the same seconds scrolling at different times, which
+  is harder to read than either would be alone. They now share one redraw
+  decision, taken when the window has scrolled by a whole dot column: the
+  smallest movement the display can show, so the rate follows the range on
+  screen rather than the stream. At 240 s that also makes the pair markedly
+  cheaper to draw than the lower plot alone used to be.
+
 ### Fixed
 
 - The analyzer plot slid sideways from frame to frame, while the wind plot

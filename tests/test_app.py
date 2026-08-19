@@ -34,7 +34,7 @@ from record_ec_visualizer_tui.tui.plot import (
 BRAILLE_BLANK = chr(BRAILLE_BASE)
 
 
-def _build(glyphs: GlyphSet = BRAILLE) -> tuple[VisualizerApp, LiveState]:
+def _build(glyphs: GlyphSet = BRAILLE, speedup: float = 40.0) -> tuple[VisualizerApp, LiveState]:
     config = SimulationConfig()
     state = LiveState(
         gas_var="CO2",
@@ -42,7 +42,7 @@ def _build(glyphs: GlyphSet = BRAILLE) -> tuple[VisualizerApp, LiveState]:
         gas_map=VariableMap(config.var_map),
     )
     app = VisualizerApp(
-        simulated_lines(RecordSimulator(config), speedup=40.0),
+        simulated_lines(RecordSimulator(config), speedup=speedup),
         state,
         subtitle="test",
         glyphs=glyphs,
@@ -120,6 +120,41 @@ def test_app_ingests_and_renders_both_streams():
     # Something was actually drawn, not just an empty braille grid.
     assert any(ch > BRAILLE_BLANK for ch in wind), "wind plot is blank"
     assert any(ch > BRAILLE_BLANK for ch in gas), "gas plot is blank"
+
+
+def test_the_two_panels_step_together():
+    """They are stacked to be read against each other, so they move as one.
+
+    Gating each panel on its own stream meant the analyzer's 20 Hz records
+    stepped the lower plot on every frame while the wind plot above it, fed
+    once a second, sat still in between. Counting the draws rather than
+    comparing the pictures is deliberate: two consecutive redraws can produce
+    identical text, so equal content would not prove they were drawn together.
+    """
+
+    async def scenario() -> tuple[int, int]:
+        # Real time, not the 40x the other tests use: the whole point is that
+        # the two streams arrive at rates twenty times apart, and speeding the
+        # clock up makes sonicshow look as fast as the analyzer.
+        app, _ = _build(speedup=1.0)
+        counts = {"wind": 0, "gas": 0}
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            for name, panel in (("wind", app._wind_panel), ("gas", app._gas_panel)):
+                original = panel.draw
+
+                def counted(*args, _name=name, _original=original, **kwargs):
+                    counts[_name] += 1
+                    return _original(*args, **kwargs)
+
+                panel.draw = counted
+            await asyncio.sleep(2.0)
+            await pilot.pause()
+        return counts["wind"], counts["gas"]
+
+    wind, gas = asyncio.run(scenario())
+    assert wind > 0, "neither panel was drawn at all"
+    assert wind == gas, f"wind panel drawn {wind} times against the gas panel's {gas}"
 
 
 def test_blocks_glyphs_reach_the_panels():
