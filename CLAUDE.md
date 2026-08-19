@@ -151,10 +151,10 @@ not time-indexed. Both are easy to undo by accident:
 
 `SeriesBuffer` measures the cadence instead of taking it from configuration. An
 analyzer's rate is a per-site value that this package does not hardcode, and the
-stream itself is the most reliable source for it. Normal arrivals feed an
-exponential moving average; a late arrival is measured against it, pads
-`round(delta / interval) - 1` slots, and never pollutes the estimate. Use
-`round`, not `int`: an exact 4 s gap at 20 Hz evaluates to 79.999….
+stream itself is the most reliable source for it. Ordinary arrivals extend a
+run and the estimate is that run's average; a late arrival is measured against
+it, pads `round(delta / interval) - 1` slots, and never pollutes the estimate.
+Use `round`, not `int`: an exact 4 s gap at 20 Hz evaluates to 79.999….
 
 Verified end to end: a 4 s analyzer dropout produces 80 `nan` slots and renders
 as a 6-column hole, against 0 blank columns for uninterrupted data.
@@ -170,6 +170,24 @@ outage, which padded slots instead of feeding the estimate back up. It ran away
 within seconds. On the logging host a minute of analyzer data became a
 two-second window that was 99% padding, and it looked exactly like a failing
 analyzer. `TestGapDetection` covers both directions.
+
+**The estimate has to be steady, not merely unbiased**, and that is why it is
+a run average rather than a moving average over every delta. `window_values`
+turns it into a slot count and the renderer spreads that many slots across the
+full width, so any change in the estimate moves every sample sideways.
+Scheduling jitter is the same few milliseconds at any rate, which makes it a
+large share of 50 ms and a negligible share of 1 s: with a per-delta EMA the
+analyzer panel jumped up to 5.8% of its width between consecutive frames while
+sonicshow sat perfectly still — reported from the logging host as the lower
+plot not looking smooth. A run of consecutive in-band arrivals telescopes to
+`(last - first) / (n - 1)`, so it carries the jitter of two arrivals spread
+over n of them: worst frame-to-frame step 0.25%, a 23x improvement, with the
+1 Hz panel unchanged at zero. A burst or a gap ends the run rather than
+entering it, and the published estimate stands until a fresh run reaches
+`MIN_RUN`; under delivery too broken to measure, the last trustworthy answer
+beats a fresh untrustworthy one. `TestWindowValues` asserts the frame-to-frame
+step, not the total spread — a slow drift of a few slots is invisible, a jump
+is what the eye catches.
 
 Warm-up is a duration (2 s), not a count of arrivals, and during it the
 estimate is the overall rate rather than the last delta. Under bursty delivery

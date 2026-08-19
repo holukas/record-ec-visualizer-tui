@@ -3,6 +3,23 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- The analyzer plot slid sideways from frame to frame, while the wind plot
+  above it grew smoothly. The cadence estimate was a moving average over
+  arrival deltas, and the window turns that estimate into a slot count which
+  the renderer spreads across the full width — so every wobble in it moved
+  every sample. Scheduling jitter is the same few milliseconds whatever the
+  rate, which makes it a large share of 50 ms and a negligible share of 1 s,
+  and that is the whole reason only the lower plot showed it. Measured on a
+  20 Hz stream with 3 ms of jitter: the trace jumped by up to 5.8% of the
+  plot's width between consecutive frames. The estimate is now the average of
+  a run of consecutive ordinary arrivals, which carries the jitter of two
+  arrivals spread over two hundred of them: worst step 0.25%, with the 1 Hz
+  panel unchanged at zero.
+
 ## v0.3.0 | 19 Aug 2026
 
 ### Added

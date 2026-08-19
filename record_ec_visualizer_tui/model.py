@@ -42,6 +42,11 @@ MAX_WINDOW_SECONDS = 240.0
 #: what reaches the renderer is the window, not the buffer.
 WINDOW_HEADROOM = 2.5
 
+#: Arrivals a run must reach before it may replace the published cadence. A
+#: short run right after a gap carries almost as much jitter as a single delta,
+#: which is the thing the run average exists to get away from.
+MIN_RUN = 8
+
 # The raw keys a Gill sonic reports for the three wind components, in u/v/w
 # order. sonicshow sends raw keys, not site variable names.
 WIND_RAW_KEYS = ("Wc1", "Wc2", "Wc3")
@@ -59,12 +64,12 @@ class SeriesBuffer:
 
     The cadence is learned rather than configured: an analyzer's rate is a
     per-site setting this package deliberately does not hardcode, and the
-    stream itself is the most reliable statement of what it is. Normal arrivals
-    feed an exponential moving average; an arrival that is far off it in either
-    direction is measured against it and never pollutes it. Both directions
-    matter, because arrival times stop describing the stream as soon as this
-    program is the slow one: a late arrival may only mean a frame took too
-    long, and the records queued behind it then arrive in a burst.
+    stream itself is the most reliable statement of what it is. It is averaged
+    over a run of consecutive ordinary arrivals; an arrival that is far off the
+    estimate in either direction ends the run instead of entering it. Both
+    directions matter, because arrival times stop describing the stream as soon
+    as this program is the slow one: a late arrival may only mean a frame took
+    too long, and the records queued behind it then arrive in a burst.
     """
 
     def __init__(
@@ -72,7 +77,7 @@ class SeriesBuffer:
         maxlen: int,
         detect_gaps: bool = False,
         gap_factor: float = 3.0,
-        smoothing: float = 0.2,
+        run_length: int = 200,
         warmup: float = 2.0,
     ) -> None:
         """
@@ -80,18 +85,21 @@ class SeriesBuffer:
             before the silence counts as a gap rather than as jitter. The same
             factor bounds the estimate from below: an arrival that early is a
             burst out of a backlog rather than a faster stream.
-        :param smoothing: weight of each new interval in the cadence estimate.
+        :param run_length: arrivals the estimate averages over. See
+            :meth:`_learn` for why this is an average over a run and not a
+            moving average over every delta.
         :param warmup: seconds to estimate from the overall rate before
-            switching to per-delta updates.
+            switching to the run average.
         """
         self._points: deque[tuple[float, float]] = deque(maxlen=maxlen)
         self._detect_gaps = detect_gaps
         self._gap_factor = gap_factor
-        self._smoothing = smoothing
         self._warmup = max(0.0, warmup)
         self._interval: float | None = None
         self._first: float | None = None
         self._arrivals = 0
+        #: Arrival times of the current unbroken run of ordinary arrivals.
+        self._run: deque[float] = deque(maxlen=max(MIN_RUN, run_length))
 
     def append(self, elapsed: float, value: float | None) -> None:
         if self._points:
@@ -112,6 +120,20 @@ class SeriesBuffer:
         the event loop, and the records queued behind it are then delivered
         back to back: deltas far below the true interval, from a stream that
         never changed rate.
+
+        **The estimate has to be steady, not merely unbiased**, because the
+        window converts it into a slot count and the renderer spreads that many
+        slots across the full width. A per-delta moving average is not: it
+        inherits the arrival jitter, and jitter is a far larger share of 50 ms
+        than of 1 s, so the analyzer trace slid sideways by over a tenth of the
+        plot from one frame to the next while sonicshow sat still. What is
+        averaged here is therefore a *run* of consecutive ordinary arrivals,
+        which telescopes to ``(last - first) / (n - 1)`` and so carries the
+        jitter of two arrivals spread over n of them rather than the jitter of
+        the latest one. A burst or a gap ends the run instead of entering it,
+        and the published estimate simply stands until a fresh run is long
+        enough to replace it — under delivery too broken to measure, the last
+        trustworthy answer beats a fresh untrustworthy one.
         """
         covered = elapsed - (self._first or 0.0)
         if self._arrivals < 3 or covered < self._warmup:
@@ -125,6 +147,7 @@ class SeriesBuffer:
             # is covering enough wall time to average a stall cycle out, which
             # a fixed count does only at one particular stream rate.
             self._interval = covered / self._arrivals
+            self._run.append(elapsed)
             return
 
         interval = self._interval
@@ -137,11 +160,21 @@ class SeriesBuffer:
             # ratchet — each burst dragged the estimate down, which made the
             # next ordinary arrival look like a gap, which pushed hundreds of
             # nan slots into the buffer and never fed the estimate back up.
+            self._restart_run(elapsed)
             return
         if delta <= interval * self._gap_factor:
-            self._interval += self._smoothing * (delta - interval)
-        elif self._detect_gaps:
+            self._run.append(elapsed)
+            if len(self._run) >= MIN_RUN:
+                self._interval = (self._run[-1] - self._run[0]) / (len(self._run) - 1)
+            return
+        if self._detect_gaps:
             self._fill_missed_slots(previous, delta)
+        self._restart_run(elapsed)
+
+    def _restart_run(self, elapsed: float) -> None:
+        """Begin a fresh run at ``elapsed``, keeping the published estimate."""
+        self._run.clear()
+        self._run.append(elapsed)
 
     def _fill_missed_slots(self, previous: float, delta: float) -> None:
         """Append a nan for each sample the stream should have delivered."""
@@ -166,6 +199,7 @@ class SeriesBuffer:
         self._interval = None
         self._first = None
         self._arrivals = 0
+        self._run.clear()
 
     @property
     def values(self) -> list[float]:

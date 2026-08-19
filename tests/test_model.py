@@ -320,6 +320,35 @@ class TestWindowValues:
         self._fill(fast, 2400, 0.05)
         assert len(fast.window_values(60.0)) == 1200
 
+    def test_the_slot_count_holds_still_under_arrival_jitter(self):
+        """A steady stream must not make the trace slide sideways.
+
+        The renderer spreads whatever list it is given across the full width,
+        so every change in the slot count moves every sample. Scheduling jitter
+        is the same few milliseconds whatever the rate, which makes it a large
+        share of 50 ms and a negligible share of 1 s: with a per-delta moving
+        average the analyzer panel jumped by up to 5.8% of its width between
+        consecutive frames while sonicshow sat perfectly still.
+
+        What is asserted is the frame-to-frame step, not the total spread. A
+        slow drift of a few slots is invisible; a jump is what the eye catches.
+        """
+        rng = random.Random(1)
+        buffer = SeriesBuffer(12000, detect_gaps=True)
+        elapsed = 0.0
+        counts: list[int] = []
+        next_frame = 30.0
+        while elapsed < 120.0:
+            elapsed += max(0.001, rng.gauss(0.05, 0.003))  # 20 Hz, 3 ms jitter
+            buffer.append(elapsed, 420.0)
+            if elapsed >= next_frame:
+                next_frame += 1.0 / 8.0  # the app redraws at 8 Hz
+                counts.append(len(buffer.window_values(60.0, elapsed)))
+
+        width = sum(counts) / len(counts)
+        worst = max(abs(b - a) for a, b in zip(counts, counts[1:]))
+        assert worst / width < 0.005, f"trace moved {worst / width:.1%} of the width in one frame"
+
     def test_a_moment_lands_in_the_same_place_at_either_rate(self):
         """The point of the whole feature, tested on the thing a viewer does.
 
