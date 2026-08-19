@@ -110,6 +110,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _units_for(config: dict, variable: str) -> str:
+    """The site's own unit for a data-file variable, or nothing.
+
+    ``[datafile]`` carries ``variables`` and ``units`` as parallel lists, which
+    is the only place a stream says what its numbers mean: an analyzer record
+    is bare JSON and the ``var_map`` renames without describing. Returning ""
+    when the config cannot answer is the point — the header then prints no
+    unit at all, which is honest, where a default would have been a confident
+    label on a variable that may well be a temperature or a pressure.
+    """
+    datafile = config.get("datafile") or {}
+    names = datafile.get("variables")
+    units = datafile.get("units")
+    if not isinstance(names, list) or not isinstance(units, list):
+        return ""
+    try:
+        unit = units[names.index(variable)]
+    except (ValueError, IndexError):
+        return ""
+    return unit if isinstance(unit, str) else ""
+
+
 def _load_record_config(path: Path) -> dict:
     with path.open("rb") as handle:
         return tomllib.load(handle)
@@ -122,6 +144,7 @@ def _build_simulated(args: argparse.Namespace) -> tuple[AsyncIterator[tuple[str,
     simulator = RecordSimulator(config)
     state = LiveState(
         gas_var=args.gas_var,
+        gas_units=config.units.get(args.gas_var, ""),
         sonic_map=VariableMap(config.sonic_var_map),
         gas_map=VariableMap(config.var_map),
     )
@@ -138,6 +161,7 @@ def _build_multicast(
     endpoints: list[MulticastEndpoint] = []
     sonic_map = VariableMap()
     gas_map = VariableMap()
+    config: dict = {}
 
     if bool(args.sonicshow_group) != bool(args.sonicshow_port):
         parser.error("--sonicshow-group and --sonicshow-port must be given together")
@@ -170,7 +194,12 @@ def _build_multicast(
             "and/or --record-config, or --demo to run against the simulator"
         )
 
-    state = LiveState(gas_var=args.gas_var, sonic_map=sonic_map, gas_map=gas_map)
+    state = LiveState(
+        gas_var=args.gas_var,
+        gas_units=_units_for(config, args.gas_var),
+        sonic_map=sonic_map,
+        gas_map=gas_map,
+    )
     subtitle = "live · " + ", ".join(endpoint.name for endpoint in endpoints)
     return multicast_lines(endpoints), state, subtitle
 

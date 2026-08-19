@@ -120,6 +120,12 @@ wrong name is easy to overlook, because records keep arriving and the panel
 still reports the stream as live while the plot stays empty. Records without the
 plotted variable leave a gap in the line instead of repeating the last value.
 
+The unit shown next to the value is the site's own, read from `[datafile]`'s
+`variables` and `units` lists in the same `record.toml`. Any variable the
+analyzer carries can be plotted — cell temperature, pressure, flow rate — so
+the unit has to come from the config rather than be assumed. If the config does
+not name one, the header shows the value without a unit.
+
 `--analyzer` is only relevant at sites that run more than one analyzer. Without
 it, all analyzer streams are read and drawn as a single line using the first
 analyzer's `var_map`.

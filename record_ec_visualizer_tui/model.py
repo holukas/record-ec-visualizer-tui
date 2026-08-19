@@ -307,11 +307,17 @@ class LiveState:
         only sizes the buffer.
     :param gas_var: the site variable name to plot, as produced by the gas
         analyzer's ``var_map`` — e.g. ``CO2`` for a mixing ratio in umol mol-1.
+    :param gas_units: what the site calls that variable's unit. Empty when the
+        site config does not say, which the header then leaves out: a live
+        display must not put a confident unit under a number it cannot vouch
+        for, and the analyzers carry mixing ratios, densities, temperatures and
+        pressures behind names only the site's own config resolves.
     """
 
     wind_history: int = int(MAX_WINDOW_SECONDS * WINDOW_HEADROOM)
     gas_history: int = int(MAX_WINDOW_SECONDS * 20 * WINDOW_HEADROOM)
     gas_var: str = "CO2"
+    gas_units: str = ""
     sonic_map: VariableMap = field(default_factory=VariableMap)
     gas_map: VariableMap = field(default_factory=VariableMap)
 

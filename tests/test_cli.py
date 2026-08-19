@@ -31,6 +31,8 @@ def test_demo_flag_selects_the_simulator():
     lines, state, subtitle = _build_simulated(args)
     assert "simulated" in subtitle
     assert state.gas_var == "CO2"
+    # The simulator stands in for a site, units included.
+    assert state.gas_units == "umol mol-1"
     asyncio.run(lines.aclose())  # never started; close it rather than leave it to the GC
 
 
@@ -86,6 +88,49 @@ def test_dump_shows_the_var_mapped_gas_record(capsys):
     out = capsys.readouterr().out
     assert "'CO2D': 16.2" in out
     assert "'CO2_CONC': 16.2" in out
+
+
+def test_the_gas_unit_comes_from_the_site_config(tmp_path):
+    """A live display must not put a confident unit under a number.
+
+    The analyzers carry mixing ratios, densities, temperatures and pressures
+    behind names only the site's own config resolves, so the header used to
+    label a cell temperature "umol mol-1" as readily as a CO2 mixing ratio.
+    """
+    from record_ec_visualizer_tui import __main__ as cli
+
+    config = tmp_path / "record.toml"
+    config.write_text(
+        "[datafile]\n"
+        'variables = ["LI72_CO2_DRY", "LI72_T_CELL"]\n'
+        'units = ["umol mol-1", "degC"]\n'
+        "[gasanalyzers.irga]\nip = '239.0.0.1'\nport = 40000\n",
+        encoding="utf-8",
+    )
+
+    def state_for(variable):
+        args = cli.build_parser().parse_args(
+            ["--record-config", str(config), "--gas-var", variable]
+        )
+        _, state, _ = cli._build_multicast(args, cli.build_parser())
+        return state
+
+    assert state_for("LI72_CO2_DRY").gas_units == "umol mol-1"
+    assert state_for("LI72_T_CELL").gas_units == "degC"
+    # Nothing rather than a guess: the header leaves an empty unit out.
+    assert state_for("LI72_H2O_DRY").gas_units == ""
+
+
+def test_a_config_without_units_says_nothing(tmp_path):
+    from record_ec_visualizer_tui import __main__ as cli
+
+    config = tmp_path / "record.toml"
+    config.write_text(
+        "[gasanalyzers.irga]\nip = '239.0.0.1'\nport = 40000\n", encoding="utf-8"
+    )
+    args = cli.build_parser().parse_args(["--record-config", str(config)])
+    _, state, _ = cli._build_multicast(args, cli.build_parser())
+    assert state.gas_units == ""
 
 
 def test_glyphs_belongs_to_neither_source():

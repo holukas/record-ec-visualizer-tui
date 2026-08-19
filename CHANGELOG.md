@@ -28,6 +28,13 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Fixed
 
+- The gas panel labelled every variable `umol mol-1`. That is right for a CO2
+  mixing ratio and wrong for everything else the same analyzer carries — cell
+  temperature, pressure, flow rate, a diagnostic code — all of which `--gas-var`
+  will happily plot. The unit now comes from the site's `record.toml`, out of
+  `[datafile]`'s parallel `variables` and `units` lists, and the header prints
+  no unit at all when the config cannot answer.
+
 - The analyzer plot slid sideways from frame to frame, while the wind plot
   above it grew smoothly. The cadence estimate was a moving average over
   arrival deltas, and the window turns that estimate into a slot count which

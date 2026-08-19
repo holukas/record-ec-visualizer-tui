@@ -363,7 +363,7 @@ class VisualizerApp(App[None]):
             self._gas_panel.draw(
                 title="gas",
                 chips=[(state.gas_var, _number(state.gas.latest, "7.2f"), palette.gas)],
-                parts=[("umol mol-1", WIDTH_FOR_EXTRAS)],
+                parts=[(state.gas_units, WIDTH_FOR_EXTRAS)],
                 meta=f"analyzer stream  ·  last {window:.0f} s",
                 series=[{"y": state.gas.window_values(window, now), "color": palette.gas}],
                 empty_message="waiting for analyzer records",

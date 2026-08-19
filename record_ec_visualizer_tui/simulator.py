@@ -85,6 +85,22 @@ class SimulationConfig:
         }
 
     @property
+    def units(self) -> dict[str, str]:
+        """What a site TOML's ``[datafile] units`` would say for these names.
+
+        rECorD's notation, and ASCII: the display quotes them verbatim and the
+        Linux console it runs on has no superscripts.
+        """
+        return {
+            "CO2": "umol mol-1",
+            "CO2_CONC": "umol m-3",
+            "H2O": "mmol mol-1",
+            "H2O_CONC": "mmol m-3",
+            "T_CELL": "degC",
+            "PRESS_CELL": "kPa",
+        }
+
+    @property
     def sonic_var_map(self) -> dict[str, str]:
         """The sonic ``var_map`` a site TOML would carry."""
         return {"Wc1": "U", "Wc2": "V", "Wc3": "W", "StaA": "SA_DIAG_TYPE", "StaD": "SA_DIAG_VALUE"}

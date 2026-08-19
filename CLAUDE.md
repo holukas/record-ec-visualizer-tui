@@ -56,7 +56,14 @@ Rules that keep the two paths identical:
   covered by a real loopback round-trip test in `tests/test_sources.py`.
 
 The gas analyzer path applies the site's `var_map`, so the plotted variable is
-named the way the site names it (`CO2` for a mixing ratio in umol mol-1). The
+named the way the site names it (`CO2` for a mixing ratio in umol mol-1). Its
+**unit is read from the config too**, out of `[datafile]`'s parallel
+`variables` / `units` lists, and the header prints nothing when the config
+cannot answer. The unit used to be the literal `umol mol-1`, which is right for
+a CO2 mixing ratio and wrong for everything else an analyzer carries — the same
+`var_map` offers cell temperature, pressure, flow rate and a diagnostic code,
+and a live display must not put a confident label under a number it cannot
+vouch for. The
 sonic `var_map` is applied to sonicshow's *raw* keys, which is how `Wc1/Wc2/Wc3`
 get displayed as `U/V/W`.
 
