@@ -81,6 +81,12 @@ WINDOW_STEPS = (15.0, 30.0, 60.0, 120.0, MAX_WINDOW_SECONDS)
 #: An index into the ladder, not a duration.
 DEFAULT_WINDOW_INDEX = WINDOW_STEPS.index(60.0)
 
+#: The narrowest the window opens to while it is still filling. Without a floor
+#: the first frames would be drawn from two or three samples, and the y axis
+#: would rescale wildly on each one. Small enough that the growth is visible
+#: from the first second.
+MIN_WINDOW_SECONDS = 5.0
+
 #: Below these widths the header sheds its least important parts rather than
 #: wrapping, which would cost a plot row. Each optional part carries its own
 #: threshold, and the thresholds are cumulative by construction: a part is
@@ -203,8 +209,24 @@ class VisualizerApp(App[None]):
 
     @property
     def window_seconds(self) -> float:
-        """How much history both panels draw."""
+        """The range the keys select. What is drawn may still be less."""
         return WINDOW_STEPS[self._window]
+
+    def visible_seconds(self, now: float) -> float:
+        """The range actually drawn: the selected one, or all there has been.
+
+        The window opens as the data arrives instead of starting at its full
+        width, so the first minute draws the seconds it has across the whole
+        plot rather than a sliver pinned to the right edge of a mostly empty
+        one. Both panels are given this same figure, which is what keeps them
+        aligned while it grows — sizing each to its own stream would set the
+        two plots to different scales exactly when they differ most.
+
+        Widening later costs nothing: the buffers hold well past the longest
+        window, so stepping up to 120 s after two minutes of running uncovers
+        the data the 60 s view was hiding rather than padding blank space.
+        """
+        return min(self.window_seconds, max(MIN_WINDOW_SECONDS, now))
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -255,11 +277,12 @@ class VisualizerApp(App[None]):
         """
         state = self.state
         palette = self.palette
-        window = self.window_seconds
         # One clock for both panels: the window each draws ends here rather
         # than at its own last arrival, which is what keeps a stalled stream
-        # from drawing a healthy trace a whole window out of phase.
+        # from drawing a healthy trace a whole window out of phase. It also
+        # says how much of the selected range there has been time to fill.
         now = state.elapsed
+        window = self.visible_seconds(now)
 
         # The palette and the window belong in the token because neither one
         # changes the message count or the size, and a keypress that redrew

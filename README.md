@@ -57,12 +57,18 @@ other: a CO2 peak sits directly below the gust that carried it, at the same
 place on both axes. The keys step through 15, 30, 60, 120 and 240 seconds and
 stop at each end.
 
-A plot with less history than the chosen range fills from the right, so the
-trace grows leftwards into the window rather than being stretched across a span
-of time it never saw. A stream that stops scrolls out of the window the same
-way, which is what tells you it stopped: anchoring each plot to its own last
-message instead would leave a dead analyzer drawing a healthy trace, out of
-step with the panel above it and saying nothing about it.
+The window opens as the data arrives rather than starting at its full width,
+so the first minute draws the seconds it has across the whole plot instead of a
+sliver against the right edge of a mostly empty one. Widening later costs
+nothing: history is kept well past the longest range, so stepping up to 120 s
+after two minutes of running uncovers what the 60 s view was hiding rather than
+padding blank space.
+
+A stream that stops scrolls out of the window, which is what tells you it
+stopped. Anchoring each plot to its own last message instead would leave a dead
+analyzer drawing a healthy trace, out of step with the panel above it and
+saying nothing about it. A stream that starts late fills from the right for the
+same reason, so the gap sits where the missing time actually is.
 
 The four colour sets are `classic` (the 16 ANSI colours, and the only set a
 terminal limited to those renders faithfully), `okabe` (Okabe-Ito, which keeps

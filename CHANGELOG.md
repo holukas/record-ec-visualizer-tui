@@ -17,6 +17,11 @@ Notable changes to this project, newest first. Version numbers follow
   same moment rather than at each stream's own last message, so a stream that
   stops scrolls out of the plot instead of freezing against the right edge
   still looking current.
+- The window opens as the data arrives instead of starting at its full width,
+  so the first minute is a plot rather than a sliver against the right edge of
+  a mostly empty one. Widening it later uncovers history the narrower view was
+  hiding, rather than padding blank space: enough is kept to fill the longest
+  range several times over.
 - `c` cycles four colour sets for the traces. `classic` stays the default and
   is the only one built from the 16 ANSI colours: a terminal limited to those
   approximates the others to the nearest of eight, which collapses hues chosen

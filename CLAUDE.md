@@ -182,8 +182,18 @@ young stream drawn without the pad would be smeared across a span it never
 observed, and would appear to disagree with the other panel about when things
 happened.
 
-Three things about it are easy to undo and each one silently breaks the
+Four things about it are easy to undo and each one silently breaks the
 alignment it exists to provide:
+
+- **What is drawn is `visible_seconds`, not `window_seconds`.** The window
+  opens as the data arrives and stops at the selected range, so a fresh start
+  draws the seconds it has across the whole plot rather than a sliver pinned to
+  the right edge of a mostly empty minute — which on a logging host reads as a
+  stream that is not arriving. Both panels take the same figure, computed once
+  from the shared clock; sizing each to its own stream would set the two plots
+  to different scales exactly when they differ most. The floor
+  (`MIN_WINDOW_SECONDS`) exists because two or three samples make a plot whose
+  y axis rescales wildly on every frame.
 
 - **The window ends at `now`, not at the stream's own last sample.** Slots are
   appended only when something arrives, so a stream that stops would otherwise

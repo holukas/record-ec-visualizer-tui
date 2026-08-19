@@ -1,11 +1,14 @@
 """Headless smoke tests: the app must actually ingest and draw."""
 import asyncio
+import math
+
+import pytest
 
 from rich.style import Style
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import VariableMap
-from record_ec_visualizer_tui.model import LiveState
+from record_ec_visualizer_tui.model import LiveState, SeriesBuffer
 from record_ec_visualizer_tui.simulator import RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import simulated_lines
 from record_ec_visualizer_tui.tui.app import (
@@ -255,19 +258,60 @@ class TestSharedWindow:
         gas = _plain(app.query_one("#gas-plot", StreamPanel)).splitlines()[0]
         return wind, gas
 
+    @staticmethod
+    def _reported(meta: str) -> float:
+        return float(meta.split("last ")[1].split(" s")[0])
+
     def test_both_panels_report_the_same_range(self):
-        async def scenario() -> tuple[str, str, float]:
+        async def scenario() -> tuple[str, str, float, float]:
             app, _ = _build()
             async with app.run_test(size=(100, 32)) as pilot:
                 await asyncio.sleep(1.5)
                 await pilot.pause()
                 wind, gas = self._metas(app)
-                return wind, gas, app.window_seconds
+                return wind, gas, app.window_seconds, app.visible_seconds(app.state.elapsed)
 
-        wind, gas, window = asyncio.run(scenario())
-        assert window == 60.0, "the default window is one minute"
-        assert "last 60 s" in wind
-        assert "last 60 s" in gas
+        wind, gas, selected, visible = asyncio.run(scenario())
+        assert selected == 60.0, "the default range is one minute"
+        assert self._reported(wind) == self._reported(gas), "the panels disagree"
+        assert self._reported(wind) == pytest.approx(visible, abs=1.0)
+
+    def test_the_window_opens_as_the_data_arrives(self):
+        """It grows into the selected range instead of starting at full width.
+
+        A fresh start otherwise draws a few seconds of trace against the right
+        edge of a minute of blank, which on a logging host reads as a stream
+        that is not arriving.
+        """
+
+        async def scenario() -> tuple[float, list[float]]:
+            app, _ = _build()
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(1.0)
+                await pilot.pause()
+                # Sampled rather than waited out: the growth is a function of
+                # elapsed time, so a test that slept through it would spend a
+                # minute proving arithmetic.
+                return self._reported(self._metas(app)[1]), [
+                    app.visible_seconds(t) for t in (0.0, 1.0, 30.0, 59.0, 90.0)
+                ]
+
+        reported, curve = asyncio.run(scenario())
+        assert reported < 60.0, "it started at the full range instead of growing"
+        assert curve == [5.0, 5.0, 30.0, 59.0, 60.0]
+
+    def test_widening_uncovers_history_the_narrower_view_was_hiding(self):
+        # The buffers hold well past the longest window, so stepping up shows
+        # data that was there all along rather than padding blank space.
+        buffer = SeriesBuffer(12000)
+        last = 0.0
+        for index in range(4000):  # 200 s at 20 Hz
+            last = index * 0.05
+            buffer.append(last, 1.0)
+        narrow = buffer.window_values(60.0, now=last)
+        wide = buffer.window_values(120.0, now=last)
+        assert len(wide) == pytest.approx(2 * len(narrow), rel=0.01)
+        assert not any(math.isnan(value) for value in wide), "padded instead of digging"
 
     def test_the_range_keys_move_both_panels_together(self):
         async def scenario() -> list[tuple[float, str, str]]:
@@ -289,9 +333,10 @@ class TestSharedWindow:
 
         seen = asyncio.run(scenario())
         assert [window for window, _, _ in seen] == [30.0, 15.0, 30.0, 60.0]
-        for window, wind, gas in seen:
-            assert f"last {window:.0f} s" in wind
-            assert f"last {window:.0f} s" in gas
+        for _, wind, gas in seen:
+            # The number itself is capped by how long there has been to fill
+            # it; what must hold at every step is that both panels agree.
+            assert self._reported(wind) == self._reported(gas)
 
     def test_the_range_stops_at_both_ends(self):
         async def scenario() -> tuple[float, float]:
