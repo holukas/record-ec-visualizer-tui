@@ -9,6 +9,7 @@ import math
 import time
 from collections import deque
 from collections.abc import Mapping
+from itertools import islice
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,25 @@ from record_ec_visualizer_tui.codec import (
 
 # rECorD hardcodes the sonic sampling rate; it is not read from the site TOML.
 SONIC_FREQ_HZ = 20.0
+
+#: The longest window the display can be asked to show. Buffers are sized from
+#: it, because a window can only be drawn out of samples that were kept: asking
+#: for four minutes of a stream that holds one is answered with three minutes
+#: of nan. It bounds render cost too — the whole window goes through the
+#: decimator on every frame — which is why the ladder stops here rather than
+#: going on doubling.
+MAX_WINDOW_SECONDS = 240.0
+
+#: How much more than the longest window each buffer holds. Sizing a buffer to
+#: exactly the window is the one thing that must not be done: the slot count is
+#: derived from the *measured* cadence, so an estimate a few percent below
+#: nominal asks for more slots than a nominal buffer holds, and the shortfall
+#: is padded with nan. That draws a gap the stream never had, on a display
+#: whose whole purpose is showing the real ones — and it drifts frame to frame
+#: as the estimate wanders. The same headroom covers a site whose analyzer runs
+#: faster than the rate the buffer was provisioned for. It costs memory only:
+#: what reaches the renderer is the window, not the buffer.
+WINDOW_HEADROOM = 2.5
 
 # The raw keys a Gill sonic reports for the three wind components, in u/v/w
 # order. sonicshow sends raw keys, not site variable names.
@@ -151,6 +171,48 @@ class SeriesBuffer:
     def values(self) -> list[float]:
         return [value for _, value in self._points]
 
+    def window_values(self, seconds: float, now: float | None = None) -> list[float]:
+        """The most recent ``seconds`` of samples, as many slots as that spans.
+
+        Both panels are asked for the same duration so that a peak in one sits
+        above the moment that produced it in the other. That alignment rests on
+        the renderer's x axis being sample-indexed: it stretches whatever list
+        it is given across the full width, so two panels line up only when each
+        list covers the window exactly. Hence a count derived from the measured
+        cadence rather than a slice by timestamp, and a pad of ``nan`` at
+        whichever end is short — a stream that cannot account for the whole
+        window draws the part it can, in the place where that part belongs,
+        instead of being stretched across a span it never observed.
+
+        ``now`` is what makes the two windows describe the same wall clock
+        rather than each stream's own last arrival. Pass it. Slots are only
+        ever appended when something arrives, so a stream that has stopped
+        would otherwise sit frozen against the right edge, drawing a complete
+        and healthy-looking trace one whole window out of phase with its
+        neighbour while the header claimed both showed the same seconds.
+
+        Before a cadence is known there is nothing to convert with, so the
+        whole buffer is returned; that lasts for the first few samples only.
+        """
+        interval = self._interval
+        if not interval or not self._points:
+            return self.values
+        # Two slots is the least that can draw a line at all.
+        wanted = max(2, round(seconds / interval))
+        start = max(0, len(self._points) - wanted)
+        values = [value for _, value in islice(self._points, start, None)]
+        if now is not None:
+            # The slots this stream owes since its last sample. Capped at the
+            # window, because a stream that died an hour ago owes more than the
+            # plot can show and the answer is the same either way: blank.
+            missing = min(round((now - self._points[-1][0]) / interval), wanted)
+            if missing > 0:
+                values.extend([math.nan] * missing)
+                values = values[-wanted:]
+        if len(values) < wanted:
+            values = [math.nan] * (wanted - len(values)) + values
+        return values
+
     @property
     def latest(self) -> float:
         for _, value in reversed(self._points):
@@ -203,14 +265,18 @@ class StreamHealth:
 class LiveState:
     """Everything the TUI draws, fed by :meth:`ingest_sonicshow` / :meth:`ingest_ga`.
 
-    :param wind_history: how many sonicshow messages to keep (1 per second).
-    :param gas_history: how many gas analyzer records to keep (~20 per second).
+    :param wind_history: how many sonicshow messages to keep, enough for
+        :data:`MAX_WINDOW_SECONDS` at 1 Hz plus :data:`WINDOW_HEADROOM`.
+    :param gas_history: how many gas analyzer records to keep, enough for
+        :data:`MAX_WINDOW_SECONDS` at a nominal 20 Hz plus the same headroom.
+        The rate itself stays measured rather than configured; the nominal one
+        only sizes the buffer.
     :param gas_var: the site variable name to plot, as produced by the gas
         analyzer's ``var_map`` — e.g. ``CO2`` for a mixing ratio in umol mol-1.
     """
 
-    wind_history: int = 240
-    gas_history: int = 1200
+    wind_history: int = int(MAX_WINDOW_SECONDS * WINDOW_HEADROOM)
+    gas_history: int = int(MAX_WINDOW_SECONDS * 20 * WINDOW_HEADROOM)
     gas_var: str = "CO2"
     sonic_map: VariableMap = field(default_factory=VariableMap)
     gas_map: VariableMap = field(default_factory=VariableMap)

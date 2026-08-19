@@ -74,6 +74,17 @@ of everything below it, or the header wraps and costs a plot row;
 `TestHeaderDegradation` in `tests/test_app.py` asserts it fits at every width
 down to the point where the value chips alone no longer do.
 
+The trace colours come from a `Palette` in `tui/app.py`, cycled with `c`, and
+two things about the set should survive future edits. **`classic` stays first**:
+it is the only palette built from the 16 ANSI colours, and on a terminal
+limited to those the hex palettes are approximated to the nearest of eight,
+which merges hues chosen to be distinct. The default therefore has to be the
+one that cannot degrade. And **within a palette the three wind colours are
+separated by hue, not lightness** — they share a plot, they overlap, and the
+renderer resolves an overlap by last writer wins, so two traces alike in hue
+become one trace of ambiguous ownership. The gas has a plot to itself and only
+has to be legible against the background the app never paints over.
+
 `LiveState.sigma_w` and `LiveState.tke` are computed from data the parser
 already has: sonicshow reports each component as `mean(stdev)`, so TKE is one
 multiply-add over three numbers. **Any label that quotes them must mention the
@@ -96,6 +107,11 @@ three should survive future edits:
 - `VisualizerApp._refresh` only redraws a panel when its stream delivered
   something or the panel resized. sonicshow sends at 1 Hz, so redrawing the wind
   plot on every tick wasted seven of every eight redraws.
+
+The panels' redraw tokens carry the palette and window indices alongside the
+message count and the size. Neither key changes any of the other three, so a
+keypress would otherwise redraw nothing until the next message arrived and
+would read as a dead key.
 
 Together they took a refresh from ~52 ms/s to ~20 ms/s. Measure before changing
 anything on this path: the first guess, that segment drawing dominated, turned
@@ -162,6 +178,59 @@ or far too long (across the stall that caused it) — while the count over enoug
 wall time is neither. A fixed count would only cover a stall cycle at one
 particular stream rate; sonicshow at 1 Hz and an analyzer at 20 Hz need the
 same guarantee.
+
+**Both panels show one window, measured in seconds, and the window is what the
+keys move.** Before that, history was a count of samples per buffer, so 240
+slots of a 1 Hz sonic was four minutes while 1200 slots of a 20 Hz analyzer was
+one, and the two plots could not be read against each other at all — which is
+the only reason to stack them, since the question an operator asks is which
+gust carried which peak. `SeriesBuffer.window_values` converts the requested
+seconds into slots with the measured cadence, takes the tail, and pads with
+`nan` at whichever end is short. The padding is not cosmetic: the renderer
+indexes x by sample and stretches whatever list it is given across the full
+width, so two panels line up only if each list covers the window exactly. A
+young stream drawn without the pad would be smeared across a span it never
+observed, and would appear to disagree with the other panel about when things
+happened.
+
+Four things about it are easy to undo and each one silently breaks the
+alignment it exists to provide:
+
+- **What is drawn is `visible_seconds`, not `window_seconds`.** The window
+  opens as the data arrives and stops at the selected range, so a fresh start
+  draws the seconds it has across the whole plot rather than a sliver pinned to
+  the right edge of a mostly empty minute — which on a logging host reads as a
+  stream that is not arriving. Both panels take the same figure, computed once
+  from the shared clock; sizing each to its own stream would set the two plots
+  to different scales exactly when they differ most. The floor
+  (`MIN_WINDOW_SECONDS`) exists because two or three samples make a plot whose
+  y axis rescales wildly on every frame.
+
+- **The window ends at `now`, not at the stream's own last sample.** Slots are
+  appended only when something arrives, so a stream that stops would otherwise
+  sit frozen against the right edge — drawing a full, healthy trace with not
+  one `nan` in it, a whole window out of phase with its neighbour, under a
+  header claiming both show the same seconds. `_refresh` reads
+  `LiveState.elapsed` once and hands it to both panels.
+- **The whole second is in each panel's redraw token**, for the same reason: a
+  silent stream delivers no messages, and the gate keys on message count, so
+  without it the dead panel would never redraw and could not scroll out even in
+  principle. It costs nothing — the wind panel already redraws once a second
+  and the gas panel far more often.
+- **Buffers are sized past `MAX_WINDOW_SECONDS`, never to it**
+  (`WINDOW_HEADROOM`). The slot count comes from the *measured* cadence, so an
+  estimate a few percent below nominal asks for more slots than an exact buffer
+  holds, and the shortfall pads as `nan`: a gap the stream never had, drifting
+  frame to frame as the estimate wanders, on the one display whose purpose is
+  showing the real ones. The same headroom covers a site whose analyzer runs
+  faster than the rate the buffer was provisioned for. It costs memory only —
+  what reaches the renderer is the window, not the buffer.
+
+The window's cost is the reason the ladder stops at 240 s rather than doubling
+on. Measured at 90 columns, the gas panel alone costs 1.9 ms/frame at 60 s
+(1200 points) and 4.4 ms at 240 s (4800), so at the 8 Hz refresh the longest
+window spends ~35 ms/s against ~16 ms/s for the default. That is affordable
+because it is opt-in and bounded; another doubling would not be.
 
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block: Textual routes it through a cp1252

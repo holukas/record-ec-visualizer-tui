@@ -37,7 +37,7 @@ uv run python examples/demo_simulated.py
 ```
 
 ```
-wind  U   2.15 V   0.08 W   0.21  sw 0.24  TKE 0.31 ──────────── 1 Hz sonicshow  ·  last 180 s
+wind  U   2.15 V   0.08 W   0.21  sw 0.24  TKE 0.31 ───────────── 1 Hz sonicshow  ·  last 60 s
     3.82 │⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠊⠢⡀⠀⠀⠀⠀⠀⠀⠀
          │⣀⠀⠀⠀⠀⢀⣀⣀⣀⡀⠀⠀⣀⡠⠤⠤⠤⠤⠤⣀⣀⡠⠔⠒⠉⠑⠒⠢⠤⣀⠀⠀⢀⣀⠀⠀⠀⡠⠔⠒⠊⠉⠒⠒⠤⢄⣀⣀⡠⠤⠔⠁⠀⠈⠢
    -0.60 │⠀⠉⠉⠒⠒⠒⠊⠉⠁⠀⠈⠉⠑⠒⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠒⠊⠉⠁⠉⠒⠢⠔⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠒
@@ -48,7 +48,35 @@ gas  CO2  418.34  umol mol-1 ─────────────────
 sonicshow  0.4s ago  analyzer  0.0s ago  li7500rs_buffer 198/200  li7500rs_freq 20.0 Hz
 ```
 
-Keys: `q` quits, `space` pauses, `r` clears the plots.
+Keys: `q` quits, `space` pauses, `r` clears the plots, `c` changes the trace
+colours, and `-` / `+` halve and double how much history is shown.
+
+Both plots always show the same stretch of time, one minute by default, and the
+range keys move them together. That is what makes the two readable against each
+other: a CO2 peak sits directly below the gust that carried it, at the same
+place on both axes. The keys step through 15, 30, 60, 120 and 240 seconds and
+stop at each end.
+
+The window opens as the data arrives rather than starting at its full width,
+so the first minute draws the seconds it has across the whole plot instead of a
+sliver against the right edge of a mostly empty one. Widening later costs
+nothing: history is kept well past the longest range, so stepping up to 120 s
+after two minutes of running uncovers what the 60 s view was hiding rather than
+padding blank space.
+
+A stream that stops scrolls out of the window, which is what tells you it
+stopped. Anchoring each plot to its own last message instead would leave a dead
+analyzer drawing a healthy trace, out of step with the panel above it and
+saying nothing about it. A stream that starts late fills from the right for the
+same reason, so the gap sits where the missing time actually is.
+
+The four colour sets are `classic` (the 16 ANSI colours, and the only set a
+terminal limited to those renders faithfully), `okabe` (Okabe-Ito, which keeps
+its separations under the common forms of colour blindness), `aurora` and
+`dusk`.
+
+The title bar names the source and the running version, as
+`simulated · li7500rs · v0.3.0`, so a screenshot says which build drew it.
 
 The display has no borders and no separate panels for the numbers. Each stream
 gets one header line, which shows the current values, names the components in

@@ -1,10 +1,17 @@
 import math
+import random
 import time
 
 import pytest
 
 from record_ec_visualizer_tui.codec import VariableMap
-from record_ec_visualizer_tui.model import WIND_RAW_KEYS, LiveState, SeriesBuffer, StreamHealth
+from record_ec_visualizer_tui.model import (
+    MAX_WINDOW_SECONDS,
+    WIND_RAW_KEYS,
+    LiveState,
+    SeriesBuffer,
+    StreamHealth,
+)
 
 
 class TestSeriesBuffer:
@@ -291,3 +298,120 @@ class TestLabels:
 
     def test_falls_back_to_the_raw_key(self):
         assert LiveState().label_for("Wc1") == "Wc1"
+
+
+def _or_low(value: float) -> float:
+    """nan compares unhelpfully, and a padded window is full of it."""
+    return -math.inf if math.isnan(value) else value
+
+
+class TestWindowValues:
+    """Both panels are asked for one duration, so each must answer in slots."""
+
+    @staticmethod
+    def _fill(buffer: SeriesBuffer, count: int, interval: float) -> None:
+        elapsed = 0.0
+        for index in range(count):
+            buffer.append(elapsed, float(index))
+            elapsed += interval
+
+    def test_slot_count_follows_the_measured_cadence(self):
+        fast = SeriesBuffer(4800)
+        self._fill(fast, 2400, 0.05)
+        assert len(fast.window_values(60.0)) == 1200
+
+    def test_a_moment_lands_in_the_same_place_at_either_rate(self):
+        """The point of the whole feature, tested on the thing a viewer does.
+
+        Two streams 20x apart in rate see the same event; it has to land at the
+        same fraction of the width in both, or the plots cannot be read against
+        each other. Arrivals are jittered, because the slot count comes from an
+        estimate and exact synthetic timestamps would never exercise it.
+        """
+        rng = random.Random(11)
+        fast, slow = SeriesBuffer(12000), SeriesBuffer(600)
+        spike_at = 150.0
+        for buffer, interval in ((fast, 0.05), (slow, 1.0)):
+            for index in range(int(200.0 / interval)):
+                # Jitter around a fixed schedule, not a random walk: both these
+                # streams are driven by a timer, so an arrival is late or early
+                # against the nominal grid rather than against its predecessor.
+                elapsed = index * interval + rng.uniform(-0.2, 0.2) * interval
+                buffer.append(elapsed, 10.0 if abs(elapsed - spike_at) < interval else 0.0)
+
+        places = []
+        for buffer in (fast, slow):
+            window = buffer.window_values(60.0, now=200.0)
+            peak = max(range(len(window)), key=lambda i: _or_low(window[i]))
+            places.append(peak / (len(window) - 1))
+        # 200 - 60 = 140, so the spike at 150 belongs one sixth in.
+        assert places[0] == pytest.approx(1 / 6, abs=0.03)
+        assert places[1] == pytest.approx(places[0], abs=0.03)
+
+    def test_a_stream_that_stops_scrolls_out_of_the_window(self):
+        # Nothing is appended while nothing arrives, so without the clock the
+        # dead trace would sit frozen against the right edge looking current.
+        buffer = SeriesBuffer(12000)
+        self._fill(buffer, 2000, 0.05)  # last sample at t = 99.95
+        window = buffer.window_values(60.0, now=130.0)
+        assert len(window) == 1200
+        assert not math.isnan(window[0]), "the older half is still real data"
+        assert math.isnan(window[-1]), "the silence since must show as silence"
+        # Half the window is silence, give or take a slot of rounding.
+        assert sum(math.isnan(value) for value in window) == pytest.approx(600, abs=2)
+
+    def test_a_stream_dead_longer_than_the_window_goes_blank(self):
+        buffer = SeriesBuffer(12000)
+        self._fill(buffer, 2000, 0.05)
+        window = buffer.window_values(60.0, now=4000.0)
+        assert all(math.isnan(value) for value in window)
+
+    def test_a_faster_site_is_not_padded_with_a_gap_it_never_had(self):
+        """Headroom, not exact sizing. The slot count is measured, not nominal.
+
+        The buffer is provisioned from a nominal 20 Hz, but the rate is a
+        per-site value this package does not configure. A site running faster
+        fits less time in the same slots, and asking for the longest window
+        then wants more slots than exist — which pads as nan and draws an
+        outage the analyzer never had, on the one display whose job is showing
+        the real ones.
+        """
+        rng = random.Random(5)
+        state = LiveState()
+        buffer = SeriesBuffer(state.gas_history, detect_gaps=True)
+        interval = 1 / 32  # a 32 Hz analyzer against a 20 Hz provisioning
+        elapsed = 0.0
+        for index in range(int(MAX_WINDOW_SECONDS * 1.5 / interval)):
+            elapsed = index * interval + rng.uniform(-0.2, 0.2) * interval
+            buffer.append(elapsed, 1.0)
+        window = buffer.window_values(MAX_WINDOW_SECONDS, now=elapsed)
+        assert not math.isnan(window[0]), "invented a gap at the start"
+        assert not any(math.isnan(value) for value in window), "invented a gap"
+
+    def test_it_is_the_tail_that_is_kept(self):
+        buffer = SeriesBuffer(4800)
+        self._fill(buffer, 2400, 0.05)
+        assert buffer.window_values(60.0)[-1] == 2399.0
+
+    def test_a_young_buffer_is_padded_on_the_left(self):
+        # Not stretched across a span it never observed: the samples it does
+        # have stay at the right edge, where the moments they describe are.
+        buffer = SeriesBuffer(4800)
+        self._fill(buffer, 200, 0.05)
+        window = buffer.window_values(60.0)
+        assert len(window) == 1200
+        assert math.isnan(window[0])
+        assert window[-1] == 199.0
+        assert sum(math.isnan(value) for value in window) == 1000
+
+    def test_without_a_cadence_it_returns_what_there_is(self):
+        buffer = SeriesBuffer(100)
+        buffer.append(0.0, 1.0)
+        assert buffer.window_values(60.0) == [1.0]
+
+    def test_buffers_are_sized_past_the_longest_window(self):
+        # Strictly past it: sized to exactly the window, a cadence estimate
+        # below nominal pads the difference with nan and draws a phantom gap.
+        state = LiveState()
+        assert state.gas_history > MAX_WINDOW_SECONDS * 20
+        assert state.wind_history > MAX_WINDOW_SECONDS

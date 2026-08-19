@@ -3,10 +3,29 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v0.3.0 | 19 Aug 2026
 
 ### Added
 
+- `-` and `+` halve and double the plotted time range, through 15, 30, 60, 120
+  and 240 seconds, from a default of 60. Both plots always show the same range.
+  They did not before: history was kept as a count of samples, so 240 slots was
+  four minutes of a 1 Hz sonic and 1200 slots was one minute of a 20 Hz
+  analyzer. Comparing one plot against the other was guesswork.
+- Both ranges end at the same moment, rather than each at its own stream's last
+  message. A stream that stops now scrolls out of its plot, instead of holding
+  its last trace against the right edge where it looked current.
+- The range starts short and grows with the data, so the first minute is a plot
+  rather than a stub at the right edge of a blank one. Widening the range later
+  shows the older data instead of blank space, because enough history is kept
+  to fill the longest range several times over.
+- `c` cycles four colour sets. `classic` is the default and the only one built
+  from the 16 ANSI colours; a terminal limited to those approximates the rest
+  to the nearest of eight, which merges hues that were picked to be distinct.
+  `okabe` is Okabe-Ito, which stays readable with the common forms of colour
+  blindness. `aurora` and `dusk` are quieter and louder.
+- The header shows the version next to the source description, so a screenshot
+  from a logging host says which build drew it.
 - `--glyphs blocks` draws the plots with half blocks instead of braille, for
   terminals whose font has no braille block. The case that prompted it is the
   Linux virtual console on the logging host: its default console font holds at
