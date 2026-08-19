@@ -299,14 +299,15 @@ class VisualizerApp(App[None]):
         follows the range on display rather than the stream — a short window
         steps on every frame, a four-minute one about twice a second.
 
-        Moving together is not free, and the ledger is worth stating plainly on
-        a machine whose real job is rECorD's 20 Hz acquisition loop. Measured
-        on the logging host's geometry, 230 columns by 30 rows: at the default
-        60 s the pair costs ~78 ms/s against ~56 before, because the wind panel
-        now redraws as often as the analyzer's rather than once a second. At
-        240 s it costs ~21 ms/s against ~63, because that window scrolls a dot
-        column only twice a second — so the saving lands exactly where a frame
-        is most expensive.
+        The cost is worth stating plainly on a machine whose real job is
+        rECorD's 20 Hz acquisition loop. Drawing both panels every time is
+        dearer than drawing one, but the step rule and a faster renderer pay
+        for it. At 230 columns by 30 rows the pair costs roughly 25 ms/s at
+        15 s, 40-60 ms/s at 60 s and 20-30 ms/s at 240 s — the longest window
+        being the cheapest, because it scrolls a dot column only twice a
+        second while a frame there is the most expensive one to draw. Ranges
+        rather than figures: run-to-run drift on the machine these were taken
+        on is wider than the differences between them.
         """
         state = self.state
         palette = self.palette

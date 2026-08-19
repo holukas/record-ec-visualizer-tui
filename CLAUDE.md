@@ -151,11 +151,11 @@ message alongside the scroll position and both sizes. None of those changes the
 scroll position, so a keypress would otherwise redraw nothing until the window
 had moved on and would read as a dead key.
 
-The ledger for moving together, at the logging host's 230x30 geometry: at the
-default 60 s the pair costs ~78 ms/s against ~56 before, since the wind panel
-now redraws as often as the analyzer's; at 240 s, ~21 ms/s against ~63, since
-that window scrolls a dot column only twice a second. The saving lands where a
-frame is most expensive, and the extra cost where it is cheapest.
+What the pair costs at the logging host's 230x30 geometry: roughly 25 ms/s at
+a 15 s window, 40-60 ms/s at 60 s, and 20-30 ms/s at 240 s. The longest window
+is the cheapest, because it scrolls a dot column only twice a second while a
+frame there is the most expensive one to draw. Ranges rather than figures, for
+the reason above: the drift between runs is wider than the differences.
 
 What a cell is drawn from is a `plot.GlyphSet`: `BRAILLE` (2x4 dots per cell)
 and `BLOCKS` (1x2, half blocks), selected with `--glyphs`. The fallback exists
