@@ -98,8 +98,9 @@ analyzer's `var_map`.
 
 `--glyphs blocks` draws the plots with half blocks instead of braille, for
 terminals whose font has no braille block. The Linux virtual console — the
-monitor attached to the logging host — is the one that matters; see
-[Run the demo once](#run-the-demo-once).
+monitor attached to the logging host — is the one that matters, and there the
+alternative is to give the console a braille font instead. Both are described
+under [Run the demo once](#run-the-demo-once).
 
 Check that the streams arrive before starting the display, as described under
 [Check the connection first](#check-the-connection-first).
@@ -232,34 +233,89 @@ If two plots draw and move, the installation, the terminal and the locale are
 all fine.
 
 If the plots appear as rows of boxes instead of braille, the terminal cannot
-draw the characters the plots are made of. There are two causes and they need
-different fixes.
+draw the characters the plots are made of. There are two causes, and the second
+one is the one you get on the machine's own monitor.
 
-The cheap one is the locale. Check it with `locale`; if `LANG` is `C` or
+The cheap cause is the locale. Check it with `locale`; if `LANG` is `C` or
 `POSIX` rather than something ending in `UTF-8`, set `LANG=C.UTF-8`. That
 locale is built into glibc, so nothing has to be generated first.
 
-The other is the font, and it is what you get on the machine's own monitor.
-The Linux virtual console draws with a console font of 256 or 512 glyphs that
-contains no braille at all, and no locale setting changes that. Confirm it with
+The other is the font. The Linux virtual console does not use the system's
+fonts: it draws with a console font that holds at most 512 glyphs, and the
+default one has no braille block. No locale setting changes that. Tell the two
+apart with
 
 ```bash
-printf 'braille: [⠀⠁⣿]  blocks: [█▄▀]\n'
+printf 'braille: [⠀⠁⣿]  blocks: [█▄▀]  box: [─│]\n'
 ```
 
-If the braille characters are boxes while the blocks are drawn, use the
-half-block fallback:
+Whatever comes out as a box is missing from the font. If that is the braille,
+you have a choice: install a console font that has it, or draw the plots with
+something else.
+
+#### Give the console a braille font
+
+This is the better outcome — it keeps the full 2x4 resolution — and on Ubuntu
+it is one package. Debian and Ubuntu ship the braille console fonts separately
+from `console-setup`, which is why the example in `/etc/default/console-setup`
+refers to a file that is not there:
+
+```bash
+apt-get install -y console-braille
+```
+
+It installs font data only, under `/usr/share/consolefonts/`. No daemon, no
+service restart, nothing touching Python or rECorD.
+
+The files are named `brl-HEIGHTxWIDTH.psf`, height first. Pick the one matching
+your console's cell, which `showconsolefont -i` reports as rows, columns and
+glyph count, and which `/etc/default/console-setup` states as `FONTSIZE` in the
+opposite order — `FONTSIZE="8x16"` is 8 wide and 16 high, so the braille font
+is `brl-16x8.psf`.
+
+`setfont` combines several font files into one table, and every file has to
+have the same character height:
+
+```bash
+setfont /usr/share/consolefonts/Lat15-Fixed16.psf.gz /usr/share/consolefonts/brl-16x8.psf
+```
+
+Nothing is permanent yet, so re-run the `printf` line and look at it. To keep
+the pair, set it as `FONT` in `/etc/default/console-setup`, which overrides
+`FONTFACE` and `FONTSIZE`:
+
+```
+FONT='Lat15-Fixed16.psf.gz brl-16x8.psf'
+```
+
+```bash
+setupcon && update-initramfs -u
+```
+
+`setupcon` on its own restores whatever the file says, which is the way back if
+a font looks wrong.
+
+The arithmetic is worth knowing before you pick the Latin half. The console
+holds 512 glyphs and braille alone is 256 of them, so it has to pair with a
+256-glyph font, and the remaining 256 must still cover the box-drawing `─`
+and `│` that the plot uses for its axis and header rule. That is what the
+`box:` part of the `printf` line is checking. Verified working on Ubuntu 24.04
+with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf` on an 8x16 console.
+
+#### Or draw the plots without braille
 
 ```bash
 record-ec-visualizer-tui --demo --glyphs blocks
 ```
 
-`--glyphs blocks` works with a live site too, and applies to both plots. It
+Half blocks are in every console font, so this needs no font work at all. It
 costs resolution — half vertically, half horizontally, because a half block
 carries 1x2 dots where a braille cell carries 2x4 — which is why it is never
 chosen automatically. Nothing else changes: the same data, axes, header and
-gaps. Over SSH from a workstation, braille is the better picture, so prefer
-that when there is a choice.
+gaps. `--glyphs blocks` works with a live site too, and applies to both plots.
+
+Over SSH from a workstation neither of these is needed. The font then comes
+from your own terminal, and braille works.
 
 ### Find the site's record.toml
 

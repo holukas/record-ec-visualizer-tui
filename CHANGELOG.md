@@ -9,8 +9,8 @@ Notable changes to this project, newest first. Version numbers follow
 
 - `--glyphs blocks` draws the plots with half blocks instead of braille, for
   terminals whose font has no braille block. The case that prompted it is the
-  Linux virtual console on the logging host: its console font carries 256 or
-  512 glyphs and no braille at all, so a braille plot fills the screen with
+  Linux virtual console on the logging host: its default console font holds at
+  most 512 glyphs and no braille at all, so a braille plot fills the screen with
   replacement boxes — including every blank cell, since the blank is U+2800
   rather than a space. Half blocks cost half the vertical and half the
   horizontal resolution, so the mode is never selected automatically; a
@@ -36,7 +36,11 @@ Notable changes to this project, newest first. Version numbers follow
 
 - The README's advice for plots that come out as boxes covered only the locale.
   A UTF-8 locale is necessary but not sufficient: on the console the font is
-  the cause, and no locale setting fixes it.
+  the cause, and no locale setting fixes it. It now covers both fixes: giving
+  the console a braille font with `console-braille` and `setfont`, which keeps
+  the full resolution, and `--glyphs blocks`, which needs no font work. The
+  first was verified on Ubuntu 24.04 with `Lat15-Fixed16.psf.gz` and
+  `brl-16x8.psf` on an 8x16 console.
 - The setup guide gained a step for finding the site's `record.toml`. Every
   step after it needs that path, and the guide had assumed the reader knew it.
   rECorD takes it as its second argument, so the running process is the

@@ -110,7 +110,12 @@ every empty cell of the grid becomes a replacement box and the trace vanishes
 among them. Two things about it should survive future edits. **It is never
 selected automatically**: nothing at this level distinguishes a terminal that
 cannot draw braille from one that can, and guessing wrong would silently halve
-the resolution of a display that was fine. And **the geometry stays bound as
+the resolution of a display that was fine. **The console is fixable, though**,
+and the README says how: `apt install console-braille` supplies
+`brl-HEIGHTxWIDTH.psf`, which `setfont` combines with a 256-glyph Latin font of
+the same height to fill the console's 512-glyph table. Verified on Ubuntu 24.04
+with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf`. So `BLOCKS` is the answer for a
+console nobody wants to reconfigure, not the only answer. And **the geometry stays bound as
 default arguments on `set_dot`**, not read off the dataclass per call — that
 closure is the innermost operation in the renderer, and the reason the table
 lookup is flattened in the first place is that attribute access there is not
