@@ -23,6 +23,8 @@ Notable changes to this project, newest first. Version numbers follow
   to be distinct. `okabe` is Okabe-Ito, whose separations survive the common
   forms of colour blindness; `aurora` and `dusk` are a quieter and a louder set
   for a dim and a bright room.
+- The header carries the version, next to the source description, so a
+  screenshot from a logging host says which build drew it.
 - `--glyphs blocks` draws the plots with half blocks instead of braille, for
   terminals whose font has no braille block. The case that prompted it is the
   Linux virtual console on the logging host: its default console font holds at

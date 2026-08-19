@@ -3,6 +3,7 @@ import asyncio
 
 from rich.style import Style
 
+from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import VariableMap
 from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import RecordSimulator, SimulationConfig
@@ -231,6 +232,18 @@ def test_reset_clears_the_series():
     before, after = asyncio.run(scenario())
     assert before > 0
     assert after < before
+
+
+def test_the_header_names_the_build():
+    # A screenshot from a logging host has to say which version drew it.
+    async def scenario() -> str:
+        app, _ = _build()
+        async with app.run_test(size=(100, 32)):
+            return str(app.sub_title)
+
+    subtitle = asyncio.run(scenario())
+    assert f"v{__version__}" in subtitle
+    assert "test" in subtitle, "the source description survives alongside it"
 
 
 class TestSharedWindow:

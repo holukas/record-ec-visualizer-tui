@@ -23,6 +23,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Footer, Header, Static
 
+from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import DecodeError, parse_ga_message, parse_show_message
 from record_ec_visualizer_tui.model import (
     MAX_WINDOW_SECONDS,
@@ -191,7 +192,9 @@ class VisualizerApp(App[None]):
         self._palette = 0
         self._window = DEFAULT_WINDOW_INDEX
         self._refresh_interval = 1.0 / max(0.5, refresh_hz)
-        self.sub_title = subtitle
+        # The version rides in the header so that a screenshot from a
+        # logging host says which build produced it.
+        self.sub_title = f"{subtitle} · v{__version__}" if subtitle else f"v{__version__}"
 
     @property
     def palette(self) -> Palette:
