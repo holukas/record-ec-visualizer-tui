@@ -138,6 +138,26 @@ exponential moving average; a late arrival is measured against it, pads
 Verified end to end: a 4 s analyzer dropout produces 80 `nan` slots and renders
 as a 6-column hole, against 0 blank columns for uninterrupted data.
 
+**The estimate is bounded from below as well**, by the same `gap_factor`, and
+this is not symmetry for its own sake. Arrival times describe the stream only
+while this program keeps up with it. A frame that outlasts one sampling
+interval blocks the event loop, and the records queued behind it are then
+delivered back to back — deltas near zero from an instrument whose rate never
+changed. Letting those into the average was a one-way ratchet: each burst
+pulled the estimate down, which made the next ordinary arrival look like an
+outage, which padded slots instead of feeding the estimate back up. It ran away
+within seconds. On the logging host a minute of analyzer data became a
+two-second window that was 99% padding, and it looked exactly like a failing
+analyzer. `TestGapDetection` covers both directions.
+
+Warm-up is a duration (2 s), not a count of arrivals, and during it the
+estimate is the overall rate rather than the last delta. Under bursty delivery
+no single delta is the cadence — each is either far too short (inside a burst)
+or far too long (across the stall that caused it) — while the count over enough
+wall time is neither. A fixed count would only cover a stall cycle at one
+particular stream rate; sonicshow at 1 Hz and an analyzer at 20 Hz need the
+same guarantee.
+
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block: Textual routes it through a cp1252
 stream on Windows and non-ASCII output raises. For the same reason, user-facing

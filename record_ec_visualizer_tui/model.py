@@ -40,8 +40,11 @@ class SeriesBuffer:
     The cadence is learned rather than configured: an analyzer's rate is a
     per-site setting this package deliberately does not hardcode, and the
     stream itself is the most reliable statement of what it is. Normal arrivals
-    feed an exponential moving average; a late one is measured against it and
-    never pollutes it.
+    feed an exponential moving average; an arrival that is far off it in either
+    direction is measured against it and never pollutes it. Both directions
+    matter, because arrival times stop describing the stream as soon as this
+    program is the slow one: a late arrival may only mean a frame took too
+    long, and the records queued behind it then arrive in a burst.
     """
 
     def __init__(
@@ -50,30 +53,75 @@ class SeriesBuffer:
         detect_gaps: bool = False,
         gap_factor: float = 3.0,
         smoothing: float = 0.2,
+        warmup: float = 2.0,
     ) -> None:
         """
         :param gap_factor: how many typical intervals late a sample must be
-            before the silence counts as a gap rather than as jitter.
+            before the silence counts as a gap rather than as jitter. The same
+            factor bounds the estimate from below: an arrival that early is a
+            burst out of a backlog rather than a faster stream.
         :param smoothing: weight of each new interval in the cadence estimate.
+        :param warmup: seconds to estimate from the overall rate before
+            switching to per-delta updates.
         """
         self._points: deque[tuple[float, float]] = deque(maxlen=maxlen)
         self._detect_gaps = detect_gaps
         self._gap_factor = gap_factor
         self._smoothing = smoothing
+        self._warmup = max(0.0, warmup)
         self._interval: float | None = None
+        self._first: float | None = None
+        self._arrivals = 0
 
     def append(self, elapsed: float, value: float | None) -> None:
         if self._points:
             previous = self._points[-1][0]
             delta = elapsed - previous
             if delta > 0:
-                if self._interval is None:
-                    self._interval = delta
-                elif delta <= self._interval * self._gap_factor:
-                    self._interval += self._smoothing * (delta - self._interval)
-                elif self._detect_gaps:
-                    self._fill_missed_slots(previous, delta)
+                self._learn(previous, delta, elapsed)
+        else:
+            self._first = elapsed
+        self._arrivals += 1
         self._points.append((elapsed, math.nan if value is None else float(value)))
+
+    def _learn(self, previous: float, delta: float, elapsed: float) -> None:
+        """Update the cadence estimate, or treat this arrival as a gap.
+
+        Arrival times are not the stream's cadence whenever this program is the
+        slow one. A frame that takes longer than one sampling interval blocks
+        the event loop, and the records queued behind it are then delivered
+        back to back: deltas far below the true interval, from a stream that
+        never changed rate.
+        """
+        covered = elapsed - (self._first or 0.0)
+        if self._arrivals < 3 or covered < self._warmup:
+            # Warm-up takes the rate over every arrival so far rather than the
+            # last delta. Under bursty delivery no single delta is the cadence
+            # — each one is either far too short (inside a burst) or far too
+            # long (across the stall that caused it) — but the count over the
+            # whole span is neither, and seeding from one bad delta would
+            # poison every judgement made afterwards. It is a duration rather
+            # than a count of arrivals because what makes the rate trustworthy
+            # is covering enough wall time to average a stall cycle out, which
+            # a fixed count does only at one particular stream rate.
+            self._interval = covered / self._arrivals
+            return
+
+        interval = self._interval
+        if not interval:  # pragma: no cover - defensive
+            return
+        if delta * self._gap_factor < interval:
+            # A burst out of a backlog, not a stream that sped up. Excluded for
+            # the same reason a late arrival is: it says something about this
+            # process, not about the instrument. Leaving it in was a one-way
+            # ratchet — each burst dragged the estimate down, which made the
+            # next ordinary arrival look like a gap, which pushed hundreds of
+            # nan slots into the buffer and never fed the estimate back up.
+            return
+        if delta <= interval * self._gap_factor:
+            self._interval += self._smoothing * (delta - interval)
+        elif self._detect_gaps:
+            self._fill_missed_slots(previous, delta)
 
     def _fill_missed_slots(self, previous: float, delta: float) -> None:
         """Append a nan for each sample the stream should have delivered."""
@@ -96,6 +144,8 @@ class SeriesBuffer:
     def clear(self) -> None:
         self._points.clear()
         self._interval = None
+        self._first = None
+        self._arrivals = 0
 
     @property
     def values(self) -> list[float]:

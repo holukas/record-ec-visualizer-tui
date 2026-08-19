@@ -17,6 +17,21 @@ Notable changes to this project, newest first. Version numbers follow
   terminal that cannot draw braille looks the same from here as one that can,
   and guessing wrong would quietly halve a display that was fine.
 
+### Fixed
+
+- The analyzer plot degenerated into mostly holes on a host that could not
+  render as fast as the stream arrives, and the header shrank to "last 2 s"
+  when it should have said 60. `SeriesBuffer` learned its cadence from arrival
+  times, which describe the stream only while the consumer keeps up: a frame
+  that outlasts one sampling interval blocks the event loop and the queued
+  records then arrive back to back. Those near-zero deltas dragged the estimate
+  down, which made every ordinary arrival afterwards look like an outage, which
+  padded hundreds of `nan` slots and never fed the estimate back up. A one-way
+  ratchet, and indistinguishable on screen from a failing analyzer. The
+  estimate is now bounded from below by the same `gap_factor` that bounds it
+  from above, and warm-up measures the overall rate over two seconds rather
+  than trusting a single delta.
+
 ### Changed
 
 - The README's advice for plots that come out as boxes covered only the locale.

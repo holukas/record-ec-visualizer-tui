@@ -81,6 +81,45 @@ class TestGapDetection:
         buffer.append(elapsed + 4.0, 1.0)
         assert buffer.interval == pytest.approx(0.05, rel=1e-6)
 
+    @staticmethod
+    def _stalled(buffer: SeriesBuffer, cycles: int = 40, burst: int = 5, stall: float = 0.25) -> None:
+        """Feed a 20 Hz stream the way a consumer that cannot keep up sees it.
+
+        A frame that takes longer than one sampling interval blocks the event
+        loop; the records queued behind it then arrive back to back. The stream
+        never changed rate — this program did.
+        """
+        elapsed = 0.0
+        for _ in range(cycles):
+            for _ in range(burst):
+                elapsed += 0.0004  # drained from the backlog, near-simultaneous
+                buffer.append(elapsed, 420.0)
+            elapsed += stall
+
+    def test_a_burst_does_not_drag_the_cadence_down(self):
+        buffer = SeriesBuffer(2000, detect_gaps=True)
+        elapsed = self._fill(buffer, 200, 0.05)
+        for step in range(1, 6):  # five records straight out of a backlog
+            buffer.append(elapsed + step * 0.0004, 420.0)
+        # Loose because the first of the five is an ordinary arrival that only
+        # happens to be followed by a burst, so it still moves the estimate a
+        # little. Before the burst rule it landed near 0.016 instead.
+        assert buffer.interval == pytest.approx(0.05, rel=0.01)
+
+    def test_a_stalled_consumer_does_not_flood_the_buffer(self):
+        # The failure this guards against was a one-way ratchet: each burst
+        # pulled the estimate down, which made the next ordinary arrival look
+        # like an outage, which padded hundreds of nan slots and never fed the
+        # estimate back up. On the logging host it turned a minute of analyzer
+        # data into a two-second window of mostly holes.
+        buffer = SeriesBuffer(1200, detect_gaps=True)
+        self._stalled(buffer)
+        values = buffer.values
+        nans = sum(1 for value in values if math.isnan(value))
+        assert buffer.interval == pytest.approx(0.05, rel=0.3)
+        assert nans < len(values) / 2, f"{nans} of {len(values)} slots are padding"
+        assert buffer.span_seconds() == pytest.approx(10.0, rel=0.2)
+
     def test_padding_is_capped_at_the_buffer_length(self):
         # A machine left running over a weekend outage must not spin.
         buffer = SeriesBuffer(50, detect_gaps=True)
