@@ -28,6 +28,13 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Fixed
 
+- A mistyped `--gas-var` looked like a dead analyzer: records kept arriving,
+  the status bar kept calling the stream live, and the plot stayed empty
+  because the name never matched. The empty panel now says so and lists the
+  names the site's `var_map` actually produces, trimmed to the width it has.
+  Those names appear nowhere else on screen — the raw record carries the
+  instrument's own — so finding them meant going back to `--dump`.
+
 - The gas panel labelled every variable `umol mol-1`. That is right for a CO2
   mixing ratio and wrong for everything else the same analyzer carries — cell
   temperature, pressure, flow rate, a diagnostic code — all of which `--gas-var`

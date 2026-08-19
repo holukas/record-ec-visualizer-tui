@@ -339,6 +339,11 @@ class LiveState:
         self.diagnostics: dict[str, Any] = {}
         self.last_sonic_record: dict[str, Any] = {}
         self.last_gas_record: dict[str, Any] = {}
+        #: The last analyzer record after the site's var_map. Kept so the panel
+        #: can say which names a site actually offers when the one asked for
+        #: never appears — the raw record's names never match ``gas_var``, so
+        #: only the mapped form can answer that question.
+        self.last_gas_mapped: dict[str, Any] = {}
 
     @property
     def elapsed(self) -> float:
@@ -424,6 +429,7 @@ class LiveState:
         self.last_gas_record = dict(record)
 
         mapped = self.gas_map.apply(record)
+        self.last_gas_mapped = mapped
         value = mapped.get(self.gas_var)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             self.gas.append(elapsed, float(value))

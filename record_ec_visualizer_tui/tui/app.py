@@ -366,7 +366,7 @@ class VisualizerApp(App[None]):
                 parts=[(state.gas_units, WIDTH_FOR_EXTRAS)],
                 meta=f"analyzer stream  ·  last {window:.0f} s",
                 series=[{"y": state.gas.window_values(window, now), "color": palette.gas}],
-                empty_message="waiting for analyzer records",
+                empty_message=_gas_empty_message(state, self._gas_panel.plot_width),
             )
 
         # The status bar always redraws: staleness is a function of the clock,
@@ -424,6 +424,35 @@ def _header_line(
     text.append(" " + "─" * max(1, fill) + " ", style="grey35")
     text.append(meta, style="grey50")
     return text
+
+
+def _gas_empty_message(state: LiveState, width: int) -> str:
+    """What to say when the analyzer panel has nothing to draw.
+
+    A mistyped ``--gas-var`` is the failure this exists for, and it is a quiet
+    one: records keep arriving, the status bar keeps calling the stream live,
+    and the plot stays empty because the name never matches. The names a site
+    actually offers are the ``var_map``'s outputs, which appear nowhere else on
+    screen — the raw record carries the instrument's own names and those can
+    never match. So the panel lists them, trimmed to the width it has, rather
+    than leaving the viewer to go back to ``--dump``.
+    """
+    if not state.gas_health.messages or not state.last_gas_mapped:
+        return "waiting for analyzer records"
+
+    bare = f"no {state.gas_var} in these records"
+    head = f"{bare} - try "
+    names = sorted(state.last_gas_mapped)
+    shown: list[str] = []
+    for position, name in enumerate(names):
+        listed = ", ".join(shown + [name])
+        # Room for the ellipsis as well, except on the last name, where there
+        # will not be one and reserving the space would drop a name that fits.
+        allowance = 0 if position == len(names) - 1 else 5
+        if len(head) + len(listed) + allowance > width:
+            return head + ", ".join(shown) + ", ..." if shown else bare
+        shown.append(name)
+    return head + ", ".join(shown)
 
 
 def _append_health(text: Text, label: str, health: StreamHealth) -> None:

@@ -67,6 +67,13 @@ vouch for. The
 sonic `var_map` is applied to sonicshow's *raw* keys, which is how `Wc1/Wc2/Wc3`
 get displayed as `U/V/W`.
 
+When the analyzer panel has nothing to draw but records are arriving, it names
+the variables the `var_map` produces (`_gas_empty_message`). That is the shape
+of a mistyped `--gas-var`, and it is a silent failure otherwise: the stream
+reads as live and the plot stays empty forever. The mapped names exist nowhere
+else on screen, so without this the only way to find them is to stop the
+display and run `--dump`.
+
 Layout is frugal on purpose and should stay that way: no borders, no margins
 between the plots, no separate readout panels. Each stream is one `StreamPanel`
 that draws a single header line (current values, legend, and the rule that

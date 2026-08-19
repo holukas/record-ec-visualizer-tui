@@ -19,6 +19,7 @@ from record_ec_visualizer_tui.tui.app import (
     WINDOW_STEPS,
     StreamPanel,
     VisualizerApp,
+    _gas_empty_message,
     _header_line,
 )
 from record_ec_visualizer_tui.tui.plot import (
@@ -180,6 +181,39 @@ def test_blocks_glyphs_reach_the_panels():
     for name, drawn in (("wind", wind), ("gas", gas)):
         assert not any(ch >= BRAILLE_BLANK for ch in drawn), f"{name} plot still has braille"
         assert any(ch in (BLOCK_UPPER, BLOCK_LOWER, BLOCK_FULL) for ch in drawn), f"{name} plot is blank"
+
+
+class TestEmptyGasPanel:
+    """A mistyped --gas-var must not look like a dead analyzer."""
+
+    @staticmethod
+    def _state(gas_var: str, seen: dict) -> LiveState:
+        state = LiveState(gas_var=gas_var)
+        state.gas_health.messages = 12
+        state.last_gas_mapped = seen
+        return state
+
+    def test_before_any_record_it_just_waits(self):
+        assert _gas_empty_message(LiveState(gas_var="CO2"), 80) == "waiting for analyzer records"
+
+    def test_it_names_what_the_site_actually_offers(self):
+        message = _gas_empty_message(
+            self._state("CO2", {"LI72_CO2_DRY": 1.0, "LI72_H2O_DRY": 2.0}), 80
+        )
+        assert "no CO2" in message
+        assert "LI72_CO2_DRY" in message and "LI72_H2O_DRY" in message
+
+    def test_the_list_is_trimmed_to_the_width(self):
+        # It shares a row with nothing, so a message that overran would wrap
+        # and cost the panel a line of plot.
+        seen = {f"LI72_VARIABLE_{index}": 1.0 for index in range(20)}
+        for width in range(20, 200, 3):
+            message = _gas_empty_message(self._state("CO2", seen), width)
+            assert len(message) <= max(width, len("no CO2 in these records")), (width, message)
+
+    def test_a_trimmed_list_says_so(self):
+        seen = {f"LI72_VARIABLE_{index}": 1.0 for index in range(20)}
+        assert _gas_empty_message(self._state("CO2", seen), 60).endswith(", ...")
 
 
 def test_wind_header_reports_turbulence():
