@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from rich.text import Span, Text
 
@@ -70,13 +70,17 @@ class GlyphSet:
     shift_y: int
     masks: tuple[int, ...]
     cells: tuple[str, ...]
+    #: ``cells`` as a table for :meth:`str.translate`, so a row of bit
+    #: patterns becomes a row of glyphs in one C-level call instead of a
+    #: Python lookup per cell.
+    table: dict[int, str]
 
 
 #: 2x4 dots per cell. The default, and the reason the plots look like plots.
-BRAILLE = GlyphSet("braille", 2, 4, 1, 2, _DOT_MASKS, _BRAILLE_CELLS)
+BRAILLE = GlyphSet("braille", 2, 4, 1, 2, _DOT_MASKS, _BRAILLE_CELLS, dict(enumerate(_BRAILLE_CELLS)))
 
 #: 1x2 dots per cell, for terminals whose font has no braille.
-BLOCKS = GlyphSet("blocks", 1, 2, 0, 1, (1, 2), _BLOCK_CELLS)
+BLOCKS = GlyphSet("blocks", 1, 2, 0, 1, (1, 2), _BLOCK_CELLS, dict(enumerate(_BLOCK_CELLS)))
 
 #: Selectable by name from the command line.
 GLYPH_SETS = {glyphs.name: glyphs for glyphs in (BRAILLE, BLOCKS)}
@@ -114,6 +118,12 @@ def _sample_points(
     for a fraction of the segments. The stride comes back with them so gap
     detection can be scaled to match.
 
+    The dense path walks the samples a column at a time, keeping the running
+    extremes in locals, rather than tagging every sample with its column and
+    filing it. Both forms visit each sample once, but the filing form paid a
+    tuple for every sample and a dict lookup and store for every column, and
+    at four thousand samples a frame that allocation is most of the cost.
+
     The two loops are deliberately not one. Folding them together would mean
     either a branch per sample or a full list of points built before the dense
     path throws most of it away, and at four thousand samples a frame this is
@@ -146,40 +156,42 @@ def _sample_points(
                 highest = value
         return points, 1, lowest, highest
 
-    extremes: dict[int, tuple[tuple[int, float], tuple[int, float]]] = {}
-    get = extremes.get
-    for index, value in enumerate(ys):
-        if type(value) is float:
-            if not isfinite(value):
-                continue
-        else:
-            value = _as_float(value)
-            if value is None:
-                continue
-        if value < lowest:
-            lowest = value
-        if value > highest:
-            highest = value
-        # Built once and shared by both ends of the column, which is also what
-        # lets the identity check below spot a column holding a single sample.
-        point = (index, value)
-        column = index // stride
-        current = get(column)
-        if current is None:
-            extremes[column] = (point, point)
-        else:
-            low, high = current
-            extremes[column] = (
-                point if value < low[1] else low,
-                point if value > high[1] else high,
-            )
-
     reduced: list[tuple[int, float]] = []
-    for column in sorted(extremes):
-        low, high = extremes[column]
-        reduced.extend((low, high) if low[0] <= high[0] else (high, low))
-        if low is high:
-            reduced.pop()
+    append = reduced.append
+    for start in range(0, count, stride):
+        stop = min(start + stride, count)
+        low_index = high_index = -1
+        low_value = math.inf
+        high_value = -math.inf
+        for index in range(start, stop):
+            value = ys[index]
+            if type(value) is float:
+                if not isfinite(value):
+                    continue
+            else:
+                value = _as_float(value)
+                if value is None:
+                    continue
+            if value < low_value:
+                low_value = value
+                low_index = index
+            if value > high_value:
+                high_value = value
+                high_index = index
+        if low_index < 0:
+            continue
+        if low_index < high_index:
+            append((low_index, low_value))
+            append((high_index, high_value))
+        elif high_index < low_index:
+            append((high_index, high_value))
+            append((low_index, low_value))
+        else:
+            append((low_index, low_value))
+        if low_value < lowest:
+            lowest = low_value
+        if high_value > highest:
+            highest = high_value
     return reduced, stride, lowest, highest
 
 
@@ -201,9 +213,26 @@ def _draw_segment(
     y0: int,
     x1: int,
     y1: int,
-    set_dot: Callable[[int, int], None],
+    bits: list[bytearray],
+    colors: list[list[str | None]],
+    color: str | None,
+    shift_x: int,
+    shift_y: int,
+    mask_x: int,
+    mask_y: int,
+    dots_y: int,
+    masks: tuple[int, ...],
 ) -> None:
-    """Bresenham line between two dots."""
+    """Bresenham line between two dots, writing them as it goes.
+
+    The dot write is spelled out here rather than delegated to ``set_dot``
+    because this loop runs a few thousand times a frame and the call was
+    costing more than the work inside it. The geometry arrives as plain
+    arguments for the same reason the closure bound it as defaults: an
+    attribute lookup on the glyph set at this depth is not free. Both
+    endpoints come from the axis mappings, which clamp into the grid, so no
+    bounds check is needed on the dots between them.
+    """
     dx = abs(x1 - x0)
     dy = -abs(y1 - y0)
     step_x = 1 if x0 < x1 else -1
@@ -211,7 +240,11 @@ def _draw_segment(
     error = dx + dy
     x, y = x0, y0
     while True:
-        set_dot(x, y)
+        cell_x = x >> shift_x
+        cell_y = y >> shift_y
+        bits[cell_y][cell_x] |= masks[(x & mask_x) * dots_y + (y & mask_y)]
+        if color is not None:
+            colors[cell_y][cell_x] = color
         if x == x1 and y == y1:
             return
         doubled = 2 * error
@@ -285,8 +318,16 @@ def render_braille_plot(
         pad = max(abs(high) * 0.01, 0.5)
         low, high = low - pad, high + pad
 
-    bits = [[0] * width for _ in range(height)]
+    # bytearray rows, so a finished row decodes and translates into glyphs
+    # without a Python loop over its cells.
+    bits = [bytearray(width) for _ in range(height)]
     colors: list[list[str | None]] = [[None] * width for _ in range(height)]
+
+    # Read off the glyph set once for the whole frame: these are handed to
+    # the segment loop a few hundred times a panel.
+    shift_x, shift_y = glyphs.shift_x, glyphs.shift_y
+    mask_x, mask_y = glyphs.dots_x - 1, glyphs.dots_y - 1
+    dots_y, masks = glyphs.dots_y, glyphs.masks
 
     for spec, points, stride, count in scanned:
         color = spec.get("color")
@@ -294,28 +335,32 @@ def render_braille_plot(
         # once a dense series has been collapsed to its per-column envelope.
         gap_limit = max_gap * stride
 
-        def to_dot_x(index: int, count: int = count) -> int:
-            if count <= 1:
-                return dot_cols - 1
-            return int(round(index * (dot_cols - 1) / (count - 1)))
+        # The two axis mappings are written out where they are used rather
+        # than called: they run once per point, several thousand times a
+        # frame, and the arithmetic is two operations either side of a call.
+        # The expressions are kept in the original order so the rounding lands
+        # on the same dot it always did.
+        x_span = dot_cols - 1
+        x_count = count - 1
+        y_span = dot_rows - 1
+        value_span = high - low
 
-        def to_dot_y(value: float) -> int:
-            scaled = (high - value) / (high - low)
-            return min(dot_rows - 1, max(0, int(round(scaled * (dot_rows - 1)))))
-
-        # The glyph set's geometry is bound as default arguments rather than
-        # read off the dataclass per call: this runs several thousand times a
-        # frame, and an attribute lookup here is not free.
+        # What draws a lone dot: a series drawn unconnected, or the far side
+        # of a gap too wide to bridge. The dots along a segment are written by
+        # :func:`_draw_segment` itself, which is where the volume is. The
+        # geometry is still bound as default arguments rather than read off
+        # the dataclass, for the same reason it is passed to the segment
+        # loop by value: an attribute lookup at this depth is not free.
         def set_dot(
             dot_x: int,
             dot_y: int,
             color: str | None = color,
-            shift_x: int = glyphs.shift_x,
-            shift_y: int = glyphs.shift_y,
-            mask_x: int = glyphs.dots_x - 1,
-            mask_y: int = glyphs.dots_y - 1,
-            dots_y: int = glyphs.dots_y,
-            masks: tuple[int, ...] = glyphs.masks,
+            shift_x: int = shift_x,
+            shift_y: int = shift_y,
+            mask_x: int = mask_x,
+            mask_y: int = mask_y,
+            dots_y: int = dots_y,
+            masks: tuple[int, ...] = masks,
         ) -> None:
             if not (0 <= dot_x < dot_cols and 0 <= dot_y < dot_rows):
                 return
@@ -326,11 +371,20 @@ def render_braille_plot(
 
         previous: tuple[int, int, int] | None = None
         for index, value in points:
-            dot_x, dot_y = to_dot_x(index), to_dot_y(value)
+            dot_x = x_span if x_count <= 0 else int(round(index * x_span / x_count))
+            dot_y = int(round((high - value) / value_span * y_span))
+            if dot_y < 0:
+                dot_y = 0
+            elif dot_y > y_span:
+                dot_y = y_span
             if connect and previous is not None:
                 prev_index, prev_x, prev_y = previous
                 if index - prev_index <= gap_limit:
-                    _draw_segment(prev_x, prev_y, dot_x, dot_y, set_dot)
+                    _draw_segment(
+                        prev_x, prev_y, dot_x, dot_y,
+                        bits, colors, color,
+                        shift_x, shift_y, mask_x, mask_y, dots_y, masks,
+                    )
                 else:
                     set_dot(dot_x, dot_y)
             else:
@@ -341,12 +395,13 @@ def render_braille_plot(
     # handed to ``Text`` once. Appending to a ``Text`` was 29% of a frame:
     # every call strips control codes and extends the span list, and a plot of
     # a wiggly trace breaks into hundreds of short same-styled runs per frame.
-    # Each row is joined in one pass and the runs become slices of it, which
-    # also retires the per-cell list append that came with the old loop.
+    # A row of cells is a row of bit patterns, so it is held as a bytearray
+    # and turned into glyphs by one ``translate`` rather than a lookup per
+    # cell, and the coloured runs become slices of it.
     parts: list[str] = []
     spans: list[Span] = []
     offset = 0
-    cells = glyphs.cells
+    table = glyphs.table
     for row in range(height):
         if row == 0:
             label = _fmt(high)
@@ -359,11 +414,20 @@ def render_braille_plot(
         spans.append(Span(offset, offset + len(axis), axis_style))
         offset += len(axis)
 
+        row_bits = bits[row]
         row_colors = colors[row]
-        parts.append("".join([cells[value] for value in bits[row]]))
+        parts.append(row_bits.decode("latin-1").translate(table))
+        # A cell with no dots in it shows nothing, so it takes whatever colour
+        # the run it sits in already has rather than ending that run. This is
+        # not cosmetic: every span costs Textual one uncached rich-to-Textual
+        # style conversion when the panel is updated, and a trace that weaves
+        # across a row leaves single coloured cells between blanks. Carrying
+        # the run over the blanks turns those back into a handful of spans.
         start = 0
         run_style = row_colors[0]
         for column in range(1, width):
+            if not row_bits[column]:
+                continue
             style = row_colors[column]
             if style != run_style:
                 if run_style is not None:

@@ -110,21 +110,37 @@ seen, instead of totalling only two.
 
 **Render cost is a hard constraint on this project.** The intended deployment
 is the logging host, where rECorD's 20 Hz loop warns as soon as a cycle exceeds
-50 ms, so the TUI must stay out of its way. Three things keep it cheap. All
-three should survive future edits:
+50 ms, so the TUI must stay out of its way. Four things keep it cheap. All
+four should survive future edits:
 
+- **A blank cell inherits the colour run it sits in rather than ending it.**
+  This is the single largest saving on the path and it is not about drawing at
+  all. Textual converts every `Span` with `Style.from_rich_style`, once per
+  span per update, with no cache — that conversion was 48% of a `_refresh`. A
+  trace weaving across a row leaves single coloured cells between blanks, and
+  breaking the run at each blank turned one row into dozens of spans. A cell
+  with no dots displays nothing, so what colour it carries cannot be seen; the
+  run therefore crosses it. 756 spans a frame became 336, and 22% came off a
+  frame. Never restore the break: the cost is Textual's, per span, and it
+  scales with how wiggly the trace is.
 - `plot._sample_points` walks each series once: it collapses anything denser
   than the dot grid to the per-column min/max envelope, and returns the axis
   bounds from the same pass. The picture is identical (a dense trace's vertical
   smear *is* its envelope), cost stops scaling with history length, and a dense
-  series never materialises the points the grid could not have shown.
+  series never materialises the points the grid could not have shown. The dense
+  path walks a column at a time with the extremes in locals; tagging each
+  sample with its column and filing it into a dict cost a tuple per sample and
+  a lookup and store per column, which was most of the pass.
 - `render_braille_plot` assembles the frame as one string plus a list of
   `Span`s and hands it to `Text` once. Appending was 29% of a frame: every call
-  strips control codes and extends the span list, and a wiggly trace breaks
-  into hundreds of short same-styled runs. Each row is now joined in one pass
-  and the runs are slices of it. Together with the single walk this is 10-20%
-  off a frame, verified identical over 66 renders spanning both glyph sets,
-  three geometries and eleven series shapes.
+  strips control codes and extends the span list. A row of cells is a
+  `bytearray` of bit patterns turned into glyphs by one `translate`, and the
+  coloured runs are slices of it. The two mappings from a sample to a dot are
+  written out at the call site and `_draw_segment` writes its own dots rather
+  than calling `set_dot`: both run tens of thousands of times a frame, where
+  the call costs more than the arithmetic inside it. Keep the axis expressions
+  in their original order — rearranging them algebraically moves a rounding
+  boundary and a dot with it.
 - `VisualizerApp._refresh` redraws only when the window has scrolled by a whole
   dot column, which is the smallest movement the grid can express. The rate then
   follows the range on display rather than the stream: a 15 s window steps on
@@ -134,8 +150,12 @@ Measure before changing anything on this path, and measure it **against a git
 revision in one process, interleaved, best of many**. This machine's run-to-run
 drift is larger than any of these effects: the same benchmark in two separate
 runs made the same change look like a 2x win and a 36% regression. The first
-guess about where the time goes has also been wrong twice — segment drawing was
-not the dominant cost, and neither was the per-cell loop.
+guess about where the time goes has also been wrong three times — segment
+drawing was not the dominant cost, neither was the per-cell loop, and the
+largest single item turned out to be outside this package entirely, in
+Textual's per-span style conversion. Profile a whole `_refresh` through
+`App.run_test`, not `render_braille_plot` alone: half the cost of a frame is
+downstream of the function under the microscope.
 
 **Both panels are drawn from one token, or neither is.** They are stacked to be
 read against each other, and two plots of the same seconds that scroll at
@@ -151,11 +171,21 @@ message alongside the scroll position and both sizes. None of those changes the
 scroll position, so a keypress would otherwise redraw nothing until the window
 had moved on and would read as a dead key.
 
-What the pair costs at the logging host's 230x30 geometry: roughly 25 ms/s at
-a 15 s window, 40-60 ms/s at 60 s, and 20-30 ms/s at 240 s. The longest window
-is the cheapest, because it scrolls a dot column only twice a second while a
-frame there is the most expensive one to draw. Ranges rather than figures, for
-the reason above: the drift between runs is wider than the differences.
+What the pair costs at the logging host's 230x30 geometry, measured as a whole
+`_refresh` inside a running app: roughly 3.5-4 ms a frame at a 15 s window,
+7 ms at 60 s and 11 ms at 240 s. Multiplied by the rate the step rule allows,
+that is around 28 ms/s at 15 s, 49 ms/s at 60 s and 19 ms/s at 240 s. The
+longest window is the cheapest, because it scrolls a dot column only twice a
+second while a frame there is the most expensive one to draw. Figures to the
+nearest few ms, for the reason above: the drift between runs is wider than the
+differences.
+
+**The worst point of the ladder is wherever the scroll step crosses the refresh
+interval**, and at 230 columns and 8 Hz that is the 60 s default: the step is
+about 138 ms against a 125 ms tick, so the window still redraws at very nearly
+the full rate while a frame there already costs double a 15 s one. Past that
+point every window is step-limited and a lower refresh rate buys nothing;
+before it, the rate is what sets the cost.
 
 What a cell is drawn from is a `plot.GlyphSet`: `BRAILLE` (2x4 dots per cell)
 and `BLOCKS` (1x2, half blocks), selected with `--glyphs`. The fallback exists
