@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "record-ec-visualizer-tui"
-version = "0.3.0"
+version = "0.3.1"
 description = "Real-time visualizer of incoming data from the rECord logging script"
 readme = "README.md"
 # 3.11 is the floor because __main__ reads the site's record.toml with tomllib,

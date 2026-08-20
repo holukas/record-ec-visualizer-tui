@@ -3,6 +3,33 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.1 | 20 Aug 2026
+
+### Changed
+
+- Frames are 27-34% cheaper to draw. Most of the saving is not in the drawing:
+  Textual converts every colour span of a panel with `Style.from_rich_style` on
+  each update, once per span and without a cache, which was 48% of a redraw. A
+  trace weaving across a row leaves single coloured cells between blanks, and
+  ending the colour run at every blank turned one row into dozens of spans. A
+  cell with no dots displays nothing, so the run crosses it now, and 756 spans
+  a frame became 336.
+- The rest comes from four narrower changes. The per-column envelope is
+  collected a column at a time, holding the extremes in locals, instead of
+  tagging every sample with its column and filing it into a dict. A row of
+  cells is a `bytearray` that one `translate` turns into glyphs, instead of a
+  lookup per cell. The two mappings from a sample to a dot are written at the
+  call site, and `_draw_segment` writes its own dots instead of calling
+  `set_dot`; both run tens of thousands of times a frame, where the call costs
+  more than the arithmetic inside it. The output is unchanged, checked over 192
+  renders compared cell by cell on the glyph and the colour visible there,
+  across both glyph sets, four geometries, twelve series shapes, and connected
+  and bare traces.
+- At the logging host's 230x30 geometry a redraw of both panels now costs about
+  3.8 ms at a 15 s window, 7.1 ms at 60 s and 11.3 ms at 240 s. The figures
+  recorded before covered the renderer alone. These cover a whole `_refresh`
+  through a running app, which is where the span conversion showed up.
+
 ## v0.3.0 | 19 Aug 2026
 
 ### Added
