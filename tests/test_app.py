@@ -5,6 +5,7 @@ import math
 import pytest
 
 from rich.style import Style
+from textual.widgets import Static
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import VariableMap
@@ -22,6 +23,7 @@ from record_ec_visualizer_tui.tui.app import (
     _gas_empty_message,
     _header_line,
 )
+from record_ec_visualizer_tui.tui.race import RaceScreen
 from record_ec_visualizer_tui.tui.plot import (
     BLOCK_FULL,
     BLOCK_LOWER,
@@ -499,3 +501,113 @@ class TestPalettes:
         assert _rgb(PALETTES[0].gas) in before
         assert _rgb(gas_colour) in after
         assert _rgb(PALETTES[0].gas) not in after
+
+
+class TestBreathRaceScreen:
+    """The game is a screen, and the plots must not be drawn behind it."""
+
+    def test_g_opens_the_race_and_the_plots_stop_being_drawn(self):
+        """Drawing hidden panels would be the most expensive thing this does.
+
+        The pair of plots is the whole render budget on a machine whose real
+        job is rECorD's 20 Hz acquisition loop, and while the race is up nobody
+        can see them. The buffers still fill, because decoding is an app worker
+        rather than anything a screen owns.
+        """
+
+        async def scenario():
+            app, state = _build(speedup=20.0)
+            async with app.run_test(size=(100, 32)) as pilot:
+                await asyncio.sleep(0.5)
+                await pilot.press("g")
+                await pilot.pause()
+                assert isinstance(app.screen, RaceScreen)
+
+                draws = {"n": 0}
+                original = app._gas_panel.draw
+
+                def counted(*args, **kwargs):
+                    draws["n"] += 1
+                    return original(*args, **kwargs)
+
+                app._gas_panel.draw = counted
+                arrivals = state.gas_health.messages
+                await asyncio.sleep(1.0)
+                await pilot.pause()
+                hidden = draws["n"]
+                kept_arriving = state.gas_health.messages > arrivals
+
+                await pilot.press("escape")
+                await asyncio.sleep(0.5)
+                await pilot.pause()
+                return hidden, draws["n"], kept_arriving
+
+        hidden, after, kept_arriving = asyncio.run(scenario())
+        assert hidden == 0, f"the hidden panel was still drawn {hidden} times"
+        assert after > 0, "the plots never came back"
+        assert kept_arriving, "the stream stopped while the race was up"
+
+    def test_the_board_names_the_lanes_and_the_rule(self):
+        async def scenario() -> str:
+            app, _ = _build(speedup=20.0)
+            async with app.run_test(size=(100, 32)) as pilot:
+                await pilot.press("g")
+                await pilot.pause()
+                return _plain(app.screen.query_one("#race", Static))
+
+        board = asyncio.run(scenario())
+        assert "BREATH RACE" in board
+        # The threshold is the rule of the game, so it is on screen.
+        assert "1000" in board
+        # Two lanes by default, each with an animal.
+        assert "P1 snail" in board and "P2 fish" in board
+        assert "@_/" in board and "><>" in board
+        # Until somebody blows there is no finish line to draw.
+        assert "first breath of the session sets the finish line" in board
+
+    def test_a_demo_breath_travels_the_wire_and_moves_a_lane(self):
+        """End to end: the key, the simulator, the decoder, and the race.
+
+        The breath is injected as CO2 into the stream the analyzer panel plots,
+        so everything between here and the score is the code a site would run.
+        """
+
+        async def scenario():
+            config = SimulationConfig(seed=5)
+            config.dropout_every_s = 0.0
+            simulator = RecordSimulator(config)
+            state = LiveState(
+                gas_var="CO2",
+                sonic_map=VariableMap(config.sonic_var_map),
+                gas_map=VariableMap(config.var_map),
+            )
+            app = VisualizerApp(
+                simulated_lines(simulator, speedup=5.0),
+                state,
+                on_blow=simulator.blow,
+            )
+            async with app.run_test(size=(100, 32)) as pilot:
+                await pilot.press("g")
+                await asyncio.sleep(0.3)
+                first, second = app.race.racers
+                await pilot.press("b")
+
+                # While the breath is happening the lane already moves; that is
+                # the whole feel of the game, and it is only possible because
+                # the analyzer delivers at 20 Hz.
+                moved_during = 0.0
+                for _ in range(40):
+                    await asyncio.sleep(0.05)
+                    moved_during = max(moved_during, app.race.distance_of(first))
+                    if first.breaths:
+                        break
+                await pilot.pause()
+                return moved_during, first, second, app.race
+
+        moved_during, first, second, race = asyncio.run(scenario())
+        assert moved_during > 0, "the lane never moved"
+        assert first.breaths == 1, "the breath was never scored"
+        assert first.peak > 1000.0
+        # One breath, and the finish line and the turn both follow from it.
+        assert race.goal
+        assert race.active is second

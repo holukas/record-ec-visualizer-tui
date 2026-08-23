@@ -422,8 +422,17 @@ class LiveState:
             else:
                 self.diagnostics[key] = value
 
-    def ingest_ga(self, record: Mapping[str, Any]) -> None:
-        """Take one decoded raw gas analyzer record into the rolling state."""
+    def ingest_ga(self, record: Mapping[str, Any]) -> tuple[float, float | None]:
+        """Take one decoded raw gas analyzer record into the rolling state.
+
+        Returns the ``(elapsed, value)`` it appended, which is what the breath
+        race is fed from. It has to come from here rather than be read back off
+        the buffer afterwards: the game scores an integral, so it needs every
+        sample and the moment each one arrived, and a caller sampling the
+        latest value at the display rate would both miss most of a 20 Hz stream
+        and silently skip the ``None`` that marks a record with no reading in
+        it.
+        """
         elapsed = self.elapsed
         self.gas_health.mark_message()
         self.last_gas_record = dict(record)
@@ -432,15 +441,18 @@ class LiveState:
         self.last_gas_mapped = mapped
         value = mapped.get(self.gas_var)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            self.gas.append(elapsed, float(value))
+            appended: float | None = float(value)
+            self.gas.append(elapsed, appended)
         else:
             # A record without the plotted variable still counts as liveness,
             # but breaks the line rather than holding the previous value.
+            appended = None
             self.gas.append(elapsed, None)
 
         auxiliary = record.get("Auxiliary")
         if isinstance(auxiliary, Mapping) and "BufferSize" in auxiliary:
             self.diagnostics["ga_send_buffer"] = auxiliary["BufferSize"]
+        return elapsed, appended
 
     def reset(self) -> None:
         """Clear the series but keep counters, for the 'r' binding."""

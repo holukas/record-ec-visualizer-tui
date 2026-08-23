@@ -49,7 +49,8 @@ sonicshow  0.4s ago  analyzer  0.0s ago  li7500rs_buffer 198/200  li7500rs_freq 
 ```
 
 Keys: `q` quits, `space` pauses, `r` clears the plots, `c` changes the trace
-colours, and `-` / `+` halve and double how much history is shown.
+colours, `-` / `+` halve and double how much history is shown, and `g` opens
+the [breath race](#the-breath-race).
 
 Both plots always show the same stretch of time, one minute by default, and the
 range keys move them together. That is what makes the two readable against each
@@ -99,6 +100,57 @@ both streams next to the values they decode to:
 ```bash
 uv run python examples/demo_wire_format.py
 ```
+
+### The breath race
+
+`g` opens a game. Breathe at the analyzer's inlet and the CO2 reading jumps
+from a few hundred umol mol-1 to thousands within a fraction of a second, which
+is the shortest route there is from "this box measures air" to "I can move that
+with my lungs". It is meant for open days and visitors, and it is played on the
+instrument that is already running.
+
+```
+BREATH RACE   breathe at the analyzer inlet - only 1000 umol mol-1 and above moves an animal
+
+ CO2    3000 [##############################]  ambient 426   this breath 413 ppm s (0.2 s)
+
+finish line 3,570 ppm s
+
+  P1 snail ......................................................@_/|    3,952  5 breaths  #2
+> P2 fish  .........................................><>              |    3,636  5 breaths  #1
+```
+
+Each player takes a turn at the inlet. Only readings above 1000 umol mol-1
+count -- ambient air is 400-450, and a canopy at night reaches 600, so the
+threshold is clear of anything the atmosphere does. The animal runs while you
+blow, and the turn passes to the next lane when the breath ends.
+
+**The score is the area under the peak**, in ppm·s, and that is not a
+decoration. The obvious score is the highest reading, and it does not work: an
+open-path head measures to about 3000 umol mol-1, exhaled breath is more than
+ten times that, so everyone who leans close pins the sensor and every peak ties
+at the top of the scale. An integral keeps ranking blows after the reading
+saturates, because what is left to vary is how long you hold it there. It is
+also the same operation the flux processing performs, over one breath instead
+of half an hour, which is a good thing to be able to point at.
+
+The finish line is five times the first breath of the session, since the score
+depends on how far a mouth is from the inlet and no fixed figure suits every
+mast. `--race-goal` sets it explicitly in ppm·s, `--race-players` starts with
+more than two lanes, and `--breath-threshold` moves the line that counts.
+
+On the race screen, `r` starts a new race, `a` and `x` add and drop a lane, `n`
+passes a turn for a player who has stepped away, and `escape` goes back to the
+plots. Nothing is drawn behind the race while it is up, so the game costs
+nothing on top of the display it replaces -- but the streams keep arriving, and
+the plots pick up where they are when you close it.
+
+Under `--demo` there is no analyzer to breathe into, so `b` breathes for you.
+It adds a breath to the simulated CO2 stream as bytes on the wire, which the
+game then reads through the same decoder a real one would, saturation included.
+
+The plots show all of this too: a breath is a spike on the gas panel, and it is
+worth looking at afterwards.
 
 ### Pointing it at real data
 
@@ -474,7 +526,9 @@ line, the analyzer addresses from `record.toml`.
 | `simulator.py` | Produces rECorD-format data for the demo |
 | `sources.py` | Delivers `(stream, line)` pairs, from the simulator or from multicast |
 | `model.py` | Keeps the recent values of each series, and when each stream was last heard from |
+| `game.py` | Scores breaths out of the CO2 stream, and runs the race between them |
 | `tui/plot.py` | Draws the line plots, in braille or half blocks |
+| `tui/race.py` | The breath race screen |
 | `tui/app.py` | The Textual application |
 
 `sources.py` is the boundary between live and simulated data. Everything above

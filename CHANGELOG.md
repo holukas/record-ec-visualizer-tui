@@ -3,6 +3,42 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- A breath race, on `g`. Breathe at the analyzer's inlet and the CO2 reading
+  jumps from a few hundred umol mol-1 to thousands within a fraction of a
+  second; each player takes a turn at the inlet and an ASCII animal runs along
+  a lane while they blow. For open days, on the instrument that is already
+  running.
+- The score is the area under the peak, in ppm s, over the readings above
+  1000 umol mol-1. Scoring the peak instead does not work: an open-path head
+  measures to about 3000 and breath is more than ten times that, so everyone
+  who leans close pins the sensor and every peak ties at the top of the scale.
+  An integral still ranks blows after the reading saturates, because what is
+  left to vary is how long it is held there. Ambient air is 400-450 and a
+  canopy at night reaches 600, so the threshold is clear of anything the
+  atmosphere does; the excess is measured above it rather than above ambient,
+  which keeps the score continuous where a breath begins and stops the time of
+  day from handing out points.
+- The finish line defaults to five times the first breath of the session, since
+  the score depends on how far a mouth is from the inlet and no fixed figure
+  suits every mast. `--race-goal`, `--race-players` and `--breath-threshold`
+  set it and the rest explicitly.
+- `b` under `--demo` breathes into the simulated inlet, so the game can be
+  rehearsed away from a site. The simulator emits it as wire bytes and clips it
+  at the analyzer's 3000 umol mol-1 range, so a demo breath reaches the game
+  through the decoder a real one would, saturation included.
+
+### Changed
+
+- The plots are not redrawn while the race is up. They are the whole render
+  budget on a machine whose real job is rECorD's 20 Hz acquisition loop, and
+  nobody can see them behind another screen. Decoding is an app worker rather
+  than anything a screen owns, so the buffers keep filling and the plots are
+  correct again the moment the race is closed.
+
 ## v0.3.1 | 20 Aug 2026
 
 ### Changed

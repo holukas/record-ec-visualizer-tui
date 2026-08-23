@@ -33,7 +33,9 @@ multicast  ───┘
 | `simulator.py` | `RecordSimulator` — emits rECorD-format **bytes**, not objects |
 | `sources.py` | `simulated_lines()` / `multicast_lines()`, both yielding `(stream, line)` |
 | `model.py` | `SeriesBuffer`, `StreamHealth`, `LiveState` — rolling state, no I/O |
+| `game.py` | `PuffDetector` / `BreathRace` — the breath race's scoring and turns, no I/O |
 | `tui/plot.py` | `render_braille_plot()` → `rich.text.Text`, same shape as bico's |
+| `tui/race.py` | The breath race screen |
 | `tui/app.py` | The Textual app; knows only about an async iterator of lines |
 
 Rules that keep the two paths identical:
@@ -319,6 +321,55 @@ on. Measured at 90 columns, the gas panel alone costs 1.9 ms/frame at 60 s
 (1200 points) and 4.4 ms at 240 s (4800), so at the 8 Hz refresh the longest
 window spends ~35 ms/s against ~16 ms/s for the default. That is affordable
 because it is opt-in and bounded; another doubling would not be.
+
+**The breath race (`game.py`, `tui/race.py`) is scored on an integral, and
+that is the one thing about it that must not be simplified.** Breathe at the
+analyzer's inlet and the CO2 reading jumps from a few hundred umol mol-1 to
+thousands; the obvious score is the peak, and it cannot work. An open-path head
+measures to about 3000 umol mol-1 and exhaled breath is more than ten times
+that, so anyone who leans close pins the reading and every peak ties at the top
+of the scale. The score is therefore `sum (c - threshold) dt` over the samples
+above the threshold, in ppm*s: it keeps ranking blows after the sensor
+saturates, because what is left to vary is how long the reading is held there.
+The simulator clips at `co2_max_ppm` for exactly this reason — a simulated
+breath that ran on to 9000 would make a peak-based score look like it worked.
+The excess is measured **above the threshold, not above ambient**, which keeps
+the score continuous where a breath begins and keeps a background that drifts
+by more than 100 umol mol-1 between afternoon and night from handing out
+points.
+
+Four further rules, each of which a plausible simplification breaks:
+
+- **The detector is fed per record, from `ingest_ga`'s return value**, not
+  sampled from the display. The score is an integral over a 20 Hz stream and
+  reading the latest value eight times a second throws most of a breath away.
+  Nothing is integrated across a gap or a step longer than `MAX_SAMPLE_GAP_S`
+  either: the analyzer drops out, and the missing seconds must not be scored as
+  if the last value had held.
+- **A breath ends below the threshold, not at it.** The signal is noisy on the
+  falling flank, and one boundary chopped a single blow into five puffs and
+  passed the turn each time. `MAX_PUFF_SECONDS` caps the other end, because
+  what exhales for ten seconds is a bag over the head.
+- **The finish line calibrates itself from the first breath** unless
+  `--race-goal` says otherwise. The score depends on how far a mouth is from
+  the inlet, which is a property of the site's mast rather than of the player,
+  so no constant is right everywhere.
+- **`BreathRace.at_the_inlet` is not `active`.** A racer crosses the line in
+  the middle of a breath, and until that breath is scored it is still theirs;
+  attributing the live puff by `active`, which empties as soon as a lane
+  finishes, sent the winning animal back to the start line for the second
+  between crossing and being committed.
+
+The race is a `Screen`, and `_refresh` returns early while it is up. The live
+layout is frugal because every row it does not spend on decoration is a plot
+row, so a track wedged into it would cost those rows permanently for a game
+played at one open day; and drawing the pair of plots to a screen nobody can
+see is the most expensive thing this program could do with the time. Decoding
+is an app worker rather than anything a screen owns, so the buffers keep
+filling behind it. `on_blow` is the only channel that runs the other way,
+source-wards, and it is wired only under `--demo`: it asks the simulator for a
+breath, which then reaches the game as ordinary wire bytes through the decoder
+a live one would use.
 
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block: Textual routes it through a cp1252
