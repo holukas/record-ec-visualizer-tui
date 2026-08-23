@@ -167,3 +167,58 @@ class TestEndToEndIntoState:
         # The sonic var_map should relabel raw keys with the site's names.
         assert state.label_for("Wc1") == "U"
         assert state.label_for("Wc3") == "W"
+
+
+class TestBreath:
+    """``blow()`` is how the breath race is rehearsed away from a site.
+
+    It has to produce the same thing a real breath does, which for a game
+    scored on the area under the peak means one property above all: it
+    saturates. A simulated puff that ran on to 9000 would make a peak-based
+    score look like it worked.
+    """
+
+    def test_a_breath_lifts_the_co2_stream_and_comes_back_down(self):
+        config = SimulationConfig(seed=1)
+        config.dropout_every_s = 0.0
+        simulator = RecordSimulator(config)
+        map_ = VariableMap(config.var_map)
+
+        def co2_values(ticks):
+            values = []
+            for name, payload in simulator.iter_lines(ticks):
+                if name != SONICSHOW_STREAM:
+                    values.append(map_.apply(parse_ga_message(payload))["CO2"])
+            return values
+
+        before = co2_values(40)
+        simulator.blow(strength=1.0)
+        during = co2_values(20)
+        after = co2_values(200)
+
+        assert max(before) < 500.0
+        assert max(during) > 2000.0, "a breath has to be unmistakable"
+        assert after[-1] < 500.0, "and it has to clear again"
+
+    def test_a_breath_saturates_the_analyzer(self):
+        config = SimulationConfig(seed=1)
+        config.dropout_every_s = 0.0
+        simulator = RecordSimulator(config)
+        map_ = VariableMap(config.var_map)
+
+        simulator.blow(strength=1.5)
+        peak = 0.0
+        for name, payload in simulator.iter_lines(100):
+            if name != SONICSHOW_STREAM:
+                peak = max(peak, map_.apply(parse_ga_message(payload))["CO2"])
+        assert peak == config.co2_max_ppm
+
+    def test_breaths_differ_from_each_other(self):
+        """Two demo players must not tie by construction."""
+        config = SimulationConfig(seed=7)
+        simulator = RecordSimulator(config)
+        strengths = set()
+        for _ in range(5):
+            simulator.blow()
+            strengths.add(simulator._breath_strength)
+        assert len(strengths) == 5
