@@ -30,7 +30,7 @@ from pathlib import Path
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import DecodeError, VariableMap, parse_ga_message, parse_show_message
-from record_ec_visualizer_tui.game import MAX_PLAYERS, THRESHOLD_PPM, EddyDerby, PuffDetector
+from record_ec_visualizer_tui.game import DEFAULT_GOAL, MAX_PLAYERS, THRESHOLD_PPM, EddyDerby, PuffDetector
 from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM, RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import (
@@ -96,10 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
     derby.add_argument(
         "--derby-goal",
         type=float,
+        default=DEFAULT_GOAL,
         help=(
-            "finish line in ppm s (default: five times the first breath of the "
-            "session, since the score depends on how far the inlet is from the "
-            "player's mouth and no fixed figure suits every mast)"
+            f"finish line in ppm s (default: {DEFAULT_GOAL:,.0f}, about four or "
+            f"five hard breaths; raise it where the mast holds the head out of "
+            f"reach and a breath scores less)"
         ),
     )
     derby.add_argument(
@@ -306,7 +307,7 @@ def _check_derby_options(args: argparse.Namespace, parser: argparse.ArgumentPars
     """
     if not 1 <= args.derby_players <= MAX_PLAYERS:
         parser.error(f"--derby-players must be between 1 and {MAX_PLAYERS}")
-    if args.derby_goal is not None and args.derby_goal <= 0:
+    if args.derby_goal <= 0:
         parser.error("--derby-goal must be positive")
     if args.breath_threshold <= 0:
         parser.error("--breath-threshold must be positive")

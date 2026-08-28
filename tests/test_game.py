@@ -10,7 +10,7 @@ import math
 import pytest
 
 from record_ec_visualizer_tui.game import (
-    GOAL_BREATHS,
+    DEFAULT_GOAL,
     MAX_PLAYERS,
     MAX_PUFF_SECONDS,
     MIN_PUFF_SCORE,
@@ -144,19 +144,16 @@ class TestPuffDetector:
 
 
 class TestEddyDerby:
-    def test_the_first_breath_sets_the_finish_line(self):
-        """No fixed goal suits every mast, so the session calibrates itself."""
+    def test_the_finish_line_is_there_before_anybody_has_blown(self):
+        """A fixed line, so the track has a scale from the first frame."""
         derby = EddyDerby(players=2)
-        assert derby.goal is None
-        elapsed = _blow(derby.detector, level=2000.0, seconds=2.0)
-        derby.feed(elapsed, 420.0)
-        assert derby.goal == pytest.approx(2000.0 * GOAL_BREATHS, rel=0.05)
+        assert derby.goal == DEFAULT_GOAL
 
     def test_the_first_breath_moves_its_lane_while_it_is_still_going(self):
-        """The uncalibrated lane used to sit at the start until the breath ended.
+        """The opening lane used to sit at the start until the breath ended.
 
-        It is the one case where the game did not do what it says it does, and
-        it is the case every session opens with.
+        It was the one case where the game did not do what it says it does,
+        and it is the case every session opens with.
         """
         derby = EddyDerby(players=2)
         first = derby.racers[0]
@@ -168,23 +165,22 @@ class TestEddyDerby:
             derby.feed(elapsed, 3000.0)
             elapsed += 0.05
 
-        assert derby.goal is None  # the breath has not ended, so nothing is committed
+        assert first.breaths == 0  # the breath has not ended, so nothing is scored
         moving = derby.fraction_of(first)
         assert moving > 0.0  # and the animal has left the line anyway
 
         for _ in range(37):
             derby.feed(elapsed, 3000.0)
             elapsed += 0.05
-        assert derby.fraction_of(first) >= moving
+        assert derby.fraction_of(first) > moving
 
         before = derby.fraction_of(first)
         for _ in range(40):
             derby.feed(elapsed, 420.0)
             elapsed += 0.05
 
-        assert derby.goal is not None
-        # Scoring the breath must not move the animal, in either direction: the
-        # provisional finish line is the one the breath goes on to set.
+        assert first.breaths == 1
+        # Scoring the breath must not move the animal, in either direction.
         assert derby.fraction_of(first) == pytest.approx(before, abs=0.01)
 
     def test_a_breath_moves_the_lane_whose_turn_it_is_and_then_passes_it(self):
@@ -247,15 +243,15 @@ class TestEddyDerby:
             pass
         assert len(derby.racers) == 1
 
-    def test_a_reset_reopens_an_auto_calibrated_finish_line(self):
-        """A new derby calibrates itself rather than inheriting the last pace."""
+    def test_a_reset_clears_the_lanes_and_keeps_the_finish_line(self):
+        """The next group starts level, and races the same distance."""
         derby = EddyDerby(players=2)
         elapsed = _blow(derby.detector, level=2000.0, seconds=2.0)
         derby.feed(elapsed, 420.0)
-        assert derby.goal
+        assert derby.racers[0].distance > 0
 
         derby.reset()
-        assert derby.goal is None
+        assert derby.goal == DEFAULT_GOAL
         assert all(racer.distance == 0 for racer in derby.racers)
         assert derby.turn == 0
 

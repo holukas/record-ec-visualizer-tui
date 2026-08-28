@@ -114,10 +114,10 @@ EDDY DERBY   breathe at the analyzer inlet - only 1000 umol mol-1 and above move
 
  CO2    3000 [##############################]  ambient 426   this breath 413 ppm s (0.2 s)
 
-finish line 3,570 ppm s
+finish line 20,000 ppm s
 
-  P1 snail ......................................................@_/|    3,952  5 breaths  #2
-> P2 fish  .........................................><>              |    3,636  5 breaths  #1
+  P1 snail ......................................................@_/|   20,412  5 breaths  #2
+> P2 fish  .........................................><>              |   16,336  4 breaths  #1
 ```
 
 Each player takes a turn at the inlet. Only readings above 1000 umol mol-1
@@ -134,10 +134,12 @@ saturates, because what is left to vary is how long you hold it there. It is
 also the same operation the flux processing performs, over one breath instead
 of half an hour, which is a good thing to be able to point at.
 
-The finish line is five times the first breath of the session, since the score
-depends on how far a mouth is from the inlet and no fixed figure suits every
-mast. `--derby-goal` sets it explicitly in ppm·s, `--derby-players` starts with
-more than two lanes, and `--breath-threshold` moves the line that counts.
+The finish line is 20,000 ppm·s, about four or five hard breaths, so every
+derby is the same length and the number can go on a sign next to the mast. How
+much a breath scores depends on how close a mouth can get to the inlet, so on a
+mast that holds the head out of reach the derby runs long: `--derby-goal` moves
+the line. `--derby-players` starts with more than two lanes, and
+`--breath-threshold` moves the level that counts.
 
 On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane, `n`
 passes a turn for a player who has stepped away, and `escape` goes back to the

@@ -62,13 +62,14 @@ MIN_PUFF_SCORE = 100.0
 #: held throughout it.
 MAX_SAMPLE_GAP_S = 0.5
 
-#: Breaths the finish line is set to when it is calibrated from the first one.
-GOAL_BREATHS = 5
-
-#: The shortest derby an auto-calibrated goal may set, ppm*s. A first breath
-#: that barely registered would otherwise put the finish line within reach of
-#: a cough.
-MIN_GOAL = 500.0
+#: The finish line, ppm*s, and the length of a derby in one number. Around
+#: four or five hard breaths at an inlet a player can get their mouth close
+#: to, which is a few minutes for two lanes. It is a fixed figure rather than
+#: one taken from the first breath, so every session is the same length and
+#: the number can be printed on a sign; the cost is that a mast holding the
+#: head well out of reach scores less per breath and makes a longer derby, and
+#: ``--derby-goal`` is the answer there.
+DEFAULT_GOAL = 20_000.0
 
 #: One-line ASCII racers. ASCII on purpose: the logging host's display is a
 #: Linux virtual console with a 256- or 512-glyph font, the same limitation
@@ -254,11 +255,6 @@ class Racer:
         return self.place is not None
 
 
-def _goal_from_first_breath(score: float) -> float:
-    """The finish line a first breath of ``score`` ppm*s calibrates."""
-    return max(MIN_GOAL, score * GOAL_BREATHS)
-
-
 @dataclass
 class EddyDerby:
     """Racers, turns and a finish line, driven by :class:`PuffDetector`.
@@ -274,12 +270,10 @@ class EddyDerby:
     """
 
     players: int = 2
-    #: Finish line in ppm*s, or ``None`` to take it from the first breath. No
-    #: constant is right everywhere -- the score depends on how far the mouth
-    #: is from the head, which is a property of the site's mast rather than of
-    #: the player -- so by default the first breath of the session sets the
-    #: pace and everyone races against that.
-    goal: float | None = None
+    #: Finish line in ppm*s. Set from the start, so the track has a scale
+    #: before anybody has blown into it and the first lane moves on the first
+    #: breath like every other one.
+    goal: float = DEFAULT_GOAL
     detector: PuffDetector = field(default_factory=PuffDetector)
 
     def __post_init__(self) -> None:
@@ -316,9 +310,8 @@ class EddyDerby:
     def reset(self) -> None:
         """Start again with the same lanes, and re-open the finish line.
 
-        The goal goes back to whatever was configured, which for the default is
-        nothing: a fresh derby calibrates itself from its own first breath
-        rather than inheriting the pace of the last one.
+        The goal goes back to whatever was configured, in case something has
+        moved it since.
         """
         for index, racer in enumerate(self.racers):
             self.racers[index] = Racer(name=racer.name, animal=racer.animal, color=racer.color)
@@ -362,33 +355,11 @@ class EddyDerby:
             return racer.distance + puff.score
         return racer.distance
 
-    @property
-    def effective_goal(self) -> float | None:
-        """The finish line to draw the lanes against, or ``None`` before there is one.
-
-        Provisional while the first breath of the session is still going, since
-        the committed goal does not exist until that breath is scored. Dividing
-        by nothing pinned that one lane to the start line until the player
-        stopped blowing, which is exactly the rule this class opens by stating
-        that it does not do: every other breath moves its animal live.
-
-        The provisional figure is what :meth:`_commit` will calculate from the
-        same breath, so the animal is in the same place the moment before it is
-        scored as the moment after. It follows that a first breath runs a fifth
-        of the track and then holds there however long it lasts, which is not a
-        stall but what calibrating the finish line from it means.
-        """
-        if self.goal:
-            return self.goal
-        puff = self.detector.active
-        return None if puff is None else _goal_from_first_breath(puff.score)
-
     def fraction_of(self, racer: Racer) -> float:
         """How far along the track this lane is, 0 to 1."""
-        goal = self.effective_goal
-        if not goal:
+        if not self.goal:
             return 0.0
-        return min(1.0, self.distance_of(racer) / goal)
+        return min(1.0, self.distance_of(racer) / self.goal)
 
     def feed(self, elapsed: float, value: float | None) -> None:
         """Take one CO2 sample: run the detector, then move the lanes."""
@@ -413,8 +384,6 @@ class EddyDerby:
         racer.best_breath = max(racer.best_breath, puff.score)
         racer.peak = max(racer.peak, puff.peak)
 
-        if self.goal is None:
-            self.goal = _goal_from_first_breath(puff.score)
         if not racer.finished and racer.distance >= self.goal:
             self._finish(racer)
         self._next_turn()

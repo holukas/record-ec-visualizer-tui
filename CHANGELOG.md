@@ -25,10 +25,11 @@ Notable changes to this project, newest first. Version numbers follow
   after the reading saturates, because what is left to vary is how long you
   hold it there. It is also what the flux processing does, over one breath
   instead of half an hour.
-- The finish line is five times the first breath of the session, since the
-  score depends on how far a mouth is from the inlet and no fixed figure suits
-  every mast. `--derby-goal`, `--derby-players` and `--breath-threshold` set the
-  goal, the lanes and the threshold explicitly.
+- The finish line is 20,000 ppm s, about four or five hard breaths. It is the
+  same every session, so it can go on a sign next to the mast. A breath scores
+  less where the mast holds the inlet out of reach, which makes a longer derby;
+  `--derby-goal` moves the line. `--derby-players` and `--breath-threshold` set
+  the lanes and the level that counts.
 - `b` breathes for you under `--demo`, where there is no inlet to breathe into.
   The simulator puts the breath on the wire as bytes and clips it at the
   analyzer's 3000 umol mol-1 range, so it reaches the game through the same

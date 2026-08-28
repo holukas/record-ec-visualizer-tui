@@ -350,10 +350,14 @@ Four further rules, each of which a plausible simplification breaks:
   falling flank, and one boundary chopped a single blow into five puffs and
   passed the turn each time. `MAX_PUFF_SECONDS` caps the other end, because
   what exhales for ten seconds is a bag over the head.
-- **The finish line calibrates itself from the first breath** unless
-  `--derby-goal` says otherwise. The score depends on how far a mouth is from
-  the inlet, which is a property of the site's mast rather than of the player,
-  so no constant is right everywhere.
+- **The finish line is a fixed `DEFAULT_GOAL`**, 20,000 ppm*s, moved by
+  `--derby-goal`. It used to calibrate itself from the first breath of the
+  session, which adapted to the site automatically but made the number
+  unknowable before play started and left the opening lane with no scale to
+  move against. A fixed line is the same every session and can be printed on a
+  sign; what it gives up is the site adaptation, since how much a breath scores
+  depends on how close a mouth can get to the inlet, so a mast holding the head
+  out of reach makes a long derby and wants `--derby-goal`.
 - **`EddyDerby.at_the_inlet` is not `active`.** A racer crosses the line in
   the middle of a breath, and until that breath is scored it is still theirs;
   attributing the live puff by `active`, which empties as soon as a lane

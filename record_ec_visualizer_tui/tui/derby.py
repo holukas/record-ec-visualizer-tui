@@ -136,18 +136,12 @@ class DerbyScreen(Screen[None]):
         self._append_meter(text, threshold)
         text.append("\n")
 
-        # The finish line is a score, and until the first breath has been taken
-        # there may not be one yet. Saying so is better than drawing a track
-        # with no end on it and leaving the player to guess.
-        if derby.goal:
-            text.append("finish line ", style="grey50")
-            text.append(f"{derby.goal:,.0f}", style="bold")
-            text.append(" ppm s", style="grey50")
-        else:
-            # Nothing has set a scale yet, so the lanes cannot show a position.
-            # The score beside each lane still counts up while somebody blows,
-            # which is the feedback that matters until there is a track.
-            text.append("the first breath of the session sets the finish line", style="grey50")
+        # Known before anybody blows, so it is on screen from the first frame:
+        # it is the number a player is aiming at, and the one worth writing on
+        # a sign next to the mast.
+        text.append("finish line ", style="grey50")
+        text.append(f"{derby.goal:,.0f}", style="bold")
+        text.append(" ppm s", style="grey50")
         text.append("\n\n")
 
         name_width = min(NAME_WIDTH, max(len(racer.name) for racer in derby.racers))

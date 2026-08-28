@@ -562,8 +562,8 @@ class TestEddyDerbyScreen:
         # Two lanes by default, each with an animal.
         assert "P1 snail" in board and "P2 fish" in board
         assert "@_/" in board and "><>" in board
-        # Until somebody blows there is no finish line to draw.
-        assert "first breath of the session sets the finish line" in board
+        # The finish line is fixed, so it is on screen before anybody blows.
+        assert "finish line" in board and "20,000" in board
 
     def test_a_demo_breath_travels_the_wire_and_moves_a_lane(self):
         """End to end: the key, the simulator, the decoder, and the derby.
@@ -608,6 +608,5 @@ class TestEddyDerbyScreen:
         assert moved_during > 0, "the lane never moved"
         assert first.breaths == 1, "the breath was never scored"
         assert first.peak > 1000.0
-        # One breath, and the finish line and the turn both follow from it.
-        assert derby.goal
+        # One breath, and the turn passes.
         assert derby.active is second
