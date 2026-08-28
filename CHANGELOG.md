@@ -3,41 +3,42 @@
 Notable changes to this project, newest first. Version numbers follow
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## v0.4.0 | unreleased
+## v0.4.0 | 28 Aug 2026
 
 ### Added
 
-- A breath race, on `g`. Breathe at the analyzer's inlet and the CO2 reading
-  jumps from a few hundred umol mol-1 to thousands within a fraction of a
-  second; each player takes a turn at the inlet and an ASCII animal runs along
-  a lane while they blow. For open days, on the instrument that is already
+- The breath race, a game played through the analyzer's own inlet, on `g`.
+  Breathe at the inlet and the CO2 reading jumps from a few hundred
+  umol mol-1 to thousands in a fraction of a second, which is the shortest
+  route there is from "this box measures air" to "I can move that with my
+  lungs". It is for open days and visitors, on the instrument that is already
   running.
-- The score is the area under the peak, in ppm s, over the readings above
-  1000 umol mol-1. Scoring the peak instead does not work: an open-path head
-  measures to about 3000 and breath is more than ten times that, so everyone
-  who leans close pins the sensor and every peak ties at the top of the scale.
-  An integral still ranks blows after the reading saturates, because what is
-  left to vary is how long it is held there. Ambient air is 400-450 and a
-  canopy at night reaches 600, so the threshold is clear of anything the
-  atmosphere does; the excess is measured above it rather than above ambient,
-  which keeps the score continuous where a breath begins and stops the time of
-  day from handing out points.
-- The finish line defaults to five times the first breath of the session, since
-  the score depends on how far a mouth is from the inlet and no fixed figure
-  suits every mast. `--race-goal`, `--race-players` and `--breath-threshold`
-  set it and the rest explicitly.
-- `b` under `--demo` breathes into the simulated inlet, so the game can be
-  rehearsed away from a site. The simulator emits it as wire bytes and clips it
-  at the analyzer's 3000 umol mol-1 range, so a demo breath reaches the game
-  through the decoder a real one would, saturation included.
+- Each player takes a turn at the inlet, and an ASCII animal runs along their
+  lane while they blow. The turn passes to the next lane when the breath ends.
+  On the race screen, `r` starts a new race, `a` and `x` add and drop a lane,
+  `n` passes a turn for someone who has stepped away, and `escape` goes back to
+  the plots.
+- A breath scores the area under its peak, in ppm s, over the excess above
+  1000 umol mol-1. The highest reading is the obvious score and it does not
+  work: an open-path head measures to about 3000, breath is more than ten times
+  that, and everyone who leans close pins the sensor. An area still ranks blows
+  after the reading saturates, because what is left to vary is how long you
+  hold it there. It is also what the flux processing does, over one breath
+  instead of half an hour.
+- The finish line is five times the first breath of the session, since the
+  score depends on how far a mouth is from the inlet and no fixed figure suits
+  every mast. `--race-goal`, `--race-players` and `--breath-threshold` set the
+  goal, the lanes and the threshold explicitly.
+- `b` breathes for you under `--demo`, where there is no inlet to breathe into.
+  The simulator puts the breath on the wire as bytes and clips it at the
+  analyzer's 3000 umol mol-1 range, so it reaches the game through the same
+  decoder a real one would, saturation included.
 
 ### Changed
 
-- The plots are not redrawn while the race is up. They are the whole render
-  budget on a machine whose real job is rECorD's 20 Hz acquisition loop, and
-  nobody can see them behind another screen. Decoding is an app worker rather
-  than anything a screen owns, so the buffers keep filling and the plots are
-  correct again the moment the race is closed.
+- The plots are not redrawn while the race is up, so the game costs nothing on
+  top of the display it replaces. The streams keep arriving while it is open,
+  and the plots pick up where they are when it is closed.
 
 ## v0.3.1 | 20 Aug 2026
 
