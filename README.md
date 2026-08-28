@@ -16,9 +16,8 @@ reading. This program subscribes to that summary and plots it.
 ## Status
 
 Early development. The display runs against a simulated rECorD installation and
-plots the three wind components and the CO2 mixing ratio. The code for the live
-multicast streams is written and tested, but has not been tried at a real site
-yet.
+plots the three wind components and the CO2 mixing ratio. The live multicast
+code is written and tested, but has not been tried at a real site yet.
 
 The demo needs no configuration and no rECorD installation:
 
@@ -27,7 +26,7 @@ uv run record-ec-visualizer-tui --demo
 ```
 
 Without `--demo` the program expects a real site and exits with an error if you
-give it no addresses. The refusal is deliberate: the bare command on a logging
+give it no addresses. That refusal is deliberate: the bare command on a logging
 host must never display simulated numbers.
 
 The demo is also available as a plain script, for starting it from an editor:
@@ -49,49 +48,36 @@ sonicshow  0.4s ago  analyzer  0.0s ago  li7500rs_buffer 198/200  li7500rs_freq 
 ```
 
 Keys: `q` quits, `space` pauses, `r` clears the plots, `c` changes the trace
-colours, and `-` / `+` halve and double how much history is shown.
+colours, `-` / `+` halve and double how much history is shown, and `g` opens
+the [Eddy Derby](#the-eddy-derby).
 
 Both plots always show the same stretch of time, one minute by default, and the
-range keys move them together. That is what makes the two readable against each
-other: a CO2 peak sits directly below the gust that carried it, at the same
-place on both axes. The keys step through 15, 30, 60, 120 and 240 seconds and
-stop at each end.
-
-The window opens as the data arrives rather than starting at its full width,
-so the first minute draws the seconds it has across the whole plot instead of a
-sliver against the right edge of a mostly empty one. Widening later costs
-nothing: history is kept well past the longest range, so stepping up to 120 s
-after two minutes of running uncovers what the 60 s view was hiding rather than
-padding blank space.
-
-A stream that stops scrolls out of the window, which is what tells you it
-stopped. Anchoring each plot to its own last message instead would leave a dead
-analyzer drawing a healthy trace, out of step with the panel above it and
-saying nothing about it. A stream that starts late fills from the right for the
-same reason, so the gap sits where the missing time actually is.
+range keys move them together, so a CO2 peak sits directly below the gust that
+carried it. The keys step through 15, 30, 60, 120 and 240 seconds and stop at
+each end. The window opens as the data arrives, so the first minute fills the
+plot rather than a sliver at the right edge, and widening later uncovers
+history instead of padding blank space. A stream that stops scrolls out of the
+window, which is what tells you it stopped.
 
 The four colour sets are `classic` (the 16 ANSI colours, and the only set a
 terminal limited to those renders faithfully), `okabe` (Okabe-Ito, which keeps
 its separations under the common forms of colour blindness), `aurora` and
-`dusk`.
-
-The title bar names the source and the running version, as
-`simulated · li7500rs · v0.3.0`, so a screenshot says which build drew it.
+`dusk`. The title bar names the source and the running version, as
+`simulated · li7500rs · v0.4.0`, so a screenshot says which build drew it.
 
 The display has no borders and no separate panels for the numbers. Each stream
-gets one header line, which shows the current values, names the components in
-their plot colour and separates the two plots. The rest of the space is plot. In
-a narrow window the header drops its units first and its status text second,
-rather than wrapping onto a second line and costing a row of plot.
+gets one header line: the current values, the components named in their plot
+colour, and the rule that separates the plots. In a narrow window the header
+drops its units first and its status text second rather than wrapping.
 
-`sw` is the standard deviation of the vertical wind, `TKE` the turbulent
-kinetic energy, `0.5·(σu²+σv²+σw²)`. Neither needs extra data, since every
-`sonicshow` message already reports each wind component as `mean(stdev)`.
-Treat them as a rough indicator of mixing, not as a measurement. Each standard
-deviation covers a single second, so it misses the slower eddies that a 30
-minute flux average includes, and both values come out too low. In the demo
-`sigma_w` is set to 0.28 and the panel shows roughly half that. A wider
-terminal also shows the standard deviation of each component.
+`sw` is the standard deviation of the vertical wind and `TKE` the turbulent
+kinetic energy, `0.5·(σu²+σv²+σw²)`. Both come free from the `mean(stdev)`
+every `sonicshow` message already carries. Read them as a rough indicator of
+mixing rather than a measurement: each standard deviation covers a single
+second, so it misses the slower eddies a 30 minute flux average includes and
+both come out too low. The demo sets `sigma_w` to 0.28 and the panel shows
+about half that. A wider terminal also shows each component's standard
+deviation.
 
 To inspect the data rather than watch it, this example prints the raw bytes of
 both streams next to the values they decode to:
@@ -100,41 +86,96 @@ both streams next to the values they decode to:
 uv run python examples/demo_wire_format.py
 ```
 
+### The Eddy Derby
+
+`g` opens a game. Breathe at the analyzer's inlet and the CO2 reading jumps
+from a few hundred umol mol-1 to thousands within a fraction of a second, which
+is the shortest route there is from "this box measures air" to "I can move that
+with my lungs". It is meant for open days and visitors, played on the
+instrument that is already running.
+
+```
+EDDY DERBY   breathe at the analyzer inlet - only 1000 umol mol-1 and above moves an animal
+
+ CO2    3000 [##############################]  ambient 426   this breath 413 ppm s (0.2 s)
+
+finish line 20,000 ppm s
+
+  P1 snail ......................................................@_/|   20,412  5 breaths  #2
+> P2 fish  .........................................><>              |   16,336  4 breaths  #1
+```
+
+Each player takes a turn at the inlet and their animal runs while they blow.
+Only readings above 1000 umol mol-1 count, which is clear of anything the
+atmosphere does: ambient air is 400-450 and a canopy at night reaches 600. The
+turn passes once the air is clear of the breath, and the meter says `clearing`
+through that second or so, when the score and the animal both stand still.
+
+**The score is the area under the peak**, in ppm s, and that is not a
+decoration. The highest reading would be the obvious score and it does not
+work: a breath at the inlet pins the reading at the top of whatever range the
+head reports over, so the peaks tie there and the winner is whoever leaned in
+furthest. An integral keeps ranking blows after the reading saturates, and it
+is the same operation the flux processing performs, over one breath instead of
+half an hour.
+
+The finish line is 20,000 ppm s, about four or five hard breaths, so every
+derby is the same length and the number can go on a sign next to the mast. A
+mast that holds the head out of a player's reach scores less per breath and
+makes a long derby; `--derby-goal` moves the line, `--derby-players` starts
+with more than two lanes, and `--breath-threshold` moves the level that counts.
+
+Players who cross on the same numbered breath are separated by their total
+score, since P1 opens every round and ranking by the moment of crossing would
+hand P1 anything that finished level. Getting there in fewer breaths still wins
+outright.
+
+On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane,
+`n` passes a turn for a player who has stepped away, and `escape` goes back to
+the plots. Nothing is drawn behind the derby while it is up, so the game costs
+nothing on top of the display it replaces, and the plots pick up where they are
+when you close it.
+
+Under `--demo` there is no analyzer to breathe into, so `b` breathes for you.
+It adds a breath to the simulated CO2 stream as bytes on the wire, which the
+game reads through the same decoder a real one would, saturation included. A
+breath is also a spike on the gas panel, worth looking at afterwards.
+
 ### Pointing it at real data
 
 Live and simulated data take the same path through the program, and only the
-source of the lines differs. A real site therefore needs three arguments:
+source of the lines differs. A real site needs three arguments:
 
 ```bash
 uv run record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --analyzer <name> --gas-var CO2
 ```
 
-`--record-config` reads the site's `record.toml`, which supplies the analyzer
-addresses and the `var_map`, so the values on screen use the site's own variable
-names. The sonicshow address is not in that file; it is a default in rECorD's
-code, and you pass it on the command line.
+`--record-config` reads the site's `record.toml` for the analyzer addresses and
+the `var_map`, so the values on screen use the site's own variable names. The
+sonicshow address is not in that file; it is a default in rECorD's code, and
+you pass it on the command line.
 
 `--gas-var` selects the variable to plot and defaults to `CO2`. It must match
-the name produced by the site's `var_map`, not the analyzer's own name for it. A
-wrong name is easy to overlook, because records keep arriving and the panel
-still reports the stream as live while the plot stays empty. Records without the
-plotted variable leave a gap in the line instead of repeating the last value.
+the name the site's `var_map` produces, not the analyzer's own name for it. A
+wrong name is easy to overlook, since records keep arriving and the panel still
+reports the stream as live while the plot stays empty. Records without the
+plotted variable leave a gap rather than repeating the last value.
 
-The unit shown next to the value is the site's own, read from `[datafile]`'s
-`variables` and `units` lists in the same `record.toml`. Any variable the
-analyzer carries can be plotted — cell temperature, pressure, flow rate — so
-the unit has to come from the config rather than be assumed. If the config does
-not name one, the header shows the value without a unit.
+The unit beside the value is the site's own, read from `[datafile]`'s
+`variables` and `units` lists in the same file. Any variable the analyzer
+carries can be plotted, cell temperature and pressure and flow rate included,
+so the unit cannot be assumed. If the config does not name one, the header
+shows the value without a unit.
 
-`--analyzer` is only relevant at sites that run more than one analyzer. Without
-it, all analyzer streams are read and drawn as a single line using the first
+`--analyzer` matters only at sites running more than one analyzer. Without it,
+all analyzer streams are read and drawn as a single line using the first
 analyzer's `var_map`.
 
 `--glyphs blocks` draws the plots with half blocks instead of braille, for
-terminals whose font has no braille block. The Linux virtual console — the
-monitor attached to the logging host — is the one that matters, and there the
-alternative is to give the console a braille font instead. Both are described
-under [Run the demo once](#run-the-demo-once).
+terminals whose font has no braille block. The one that matters is the Linux
+virtual console, the monitor attached to the logging host, where the
+alternative is to give the console a braille font. Both are described under
+[Run the demo once](#run-the-demo-once).
 
 Check that the streams arrive before starting the display, as described under
 [Check the connection first](#check-the-connection-first).
@@ -151,24 +192,23 @@ separated by newlines.
 | Raw analyzer stream | per analyzer, from the site config | ~20 Hz | JSON | Full-rate gas analyzer records (CO2, H2O, cell temperature and pressure, …) |
 | Data file | flat in `<root_dir>` | 20 Hz | TOA5 CSV | Everything, aligned and written to disk |
 
-Some properties of these streams limit what the program can do:
+Three properties of these streams limit what the program can do:
 
 - `sonicshow` and `analyzershow` send a Python dictionary printed with `repr()`,
   not JSON. It uses single quotes, so `json.loads` rejects it. Parse it with
   `ast.literal_eval`.
 - There is no high-rate sonic stream. Wind data arrives at 1 Hz from
   `sonicshow`. The full 20 Hz exists only in the data file, which has no
-  timestamp column, so record times must be reconstructed from the file name and
-  the fixed 20 Hz rate.
-- By default the streams use TTL 0 and are bound to loopback, so they never
+  timestamp column, so record times must be reconstructed from the file name
+  and the fixed 20 Hz rate.
+- The streams use TTL 0 and are bound to loopback by default, so they never
   leave the logging host. Reading them from another machine means either
-  reconfiguring rECorD onto a LAN multicast group with a TTL above 0, or reading
-  the data files from a share.
+  reconfiguring rECorD onto a LAN multicast group with a TTL above 0, or
+  reading the data files from a share.
 
 The actual groups and ports are deliberately not in this repository. The
 defaults are in rECorD's source, and the values a site really uses are in its
-`record.toml`, together with the analyzers it runs, their addresses and their
-variable names.
+`record.toml`, along with the analyzers it runs and their variable names.
 
 ## Requirements
 
@@ -197,21 +237,21 @@ uv run pytest -q && uv run ruff check .
 ## Setting it up on the logging host
 
 The streams stay on the machine rECorD runs on, so the visualizer has to be
-installed there as well. There are five steps: install, run the demo, find the
+installed there too. There are five steps: install, run the demo, find the
 site's `record.toml`, check the connection with `--dump`, then start the
 display. Keeping them separate means a failure points at one cause rather than
 several.
 
-Two things to check first. The Python version has to be 3.11 or newer:
+Check the Python version first:
 
 ```bash
 python3 --version
 ```
 
-Debian 12 ships 3.11 and Ubuntu 24.04 ships 3.12, so on the usual logging host
-this passes; if it does not, use the uv fallback at the end of this section.
-Second, run everything below as the user that runs rECorD, for the reasons given
-under [Running it day to day](#running-it-day-to-day).
+Debian 12 ships 3.11 and Ubuntu 24.04 ships 3.12, so the usual logging host
+passes; if it does not, use the uv fallback at the end of this section. Run
+everything below as the user that runs rECorD, for the reasons under
+[Running it day to day](#running-it-day-to-day).
 
 ### Install
 
@@ -222,20 +262,20 @@ works here too:
 pipx install git+https://github.com/holukas/record-ec-visualizer-tui.git
 ```
 
-On Ubuntu 24.04 pipx is not merely the tidy choice but the only one: the system
+On Ubuntu 24.04 pipx is the only option, not just the tidy one: the system
 Python is marked externally managed, so `pip install` into it is refused.
 
-On a host without outbound network access, build the wheel elsewhere and copy it
-over together with its dependencies. The wheel on its own is not enough, since
-installing it makes pip fetch textual and rich from PyPI. All packages involved
-are pure Python, so wheels downloaded on any machine work on the logger:
+On a host without outbound network access, build the wheel elsewhere and copy
+it over with its dependencies. The wheel alone is not enough, since installing
+it makes pip fetch textual and rich from PyPI. Everything involved is pure
+Python, so wheels downloaded on any machine work on the logger:
 
 ```bash
 uv build
 ```
 
 ```bash
-pip download dist/record_ec_visualizer_tui-0.2.1-py3-none-any.whl -d wheelhouse
+pip download dist/record_ec_visualizer_tui-0.4.0-py3-none-any.whl -d wheelhouse
 ```
 
 ```bash
@@ -243,15 +283,15 @@ scp -r wheelhouse user@logger:/tmp/wheelhouse
 ```
 
 ```bash
-pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.2.1-py3-none-any.whl
+pipx install --pip-args "--no-index --find-links /tmp/wheelhouse" /tmp/wheelhouse/record_ec_visualizer_tui-0.4.0-py3-none-any.whl
 ```
 
-If the host's Python is older than 3.11, install with uv instead. uv downloads
-its own interpreter and leaves the system Python untouched, but the download
-needs network access:
+If the host's Python is older than 3.11, install with uv instead. It downloads
+its own interpreter and leaves the system Python alone, but the download needs
+network access:
 
 ```bash
-uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.2.1-py3-none-any.whl
+uv tool install --python 3.12 /tmp/record_ec_visualizer_tui-0.4.0-py3-none-any.whl
 ```
 
 ### Run the demo once
@@ -268,31 +308,29 @@ all fine.
 
 If the plots appear as rows of boxes instead of braille, the terminal cannot
 draw the characters the plots are made of. There are two causes, and the second
-one is the one you get on the machine's own monitor.
+is what you get on the machine's own monitor.
 
-The cheap cause is the locale. Check it with `locale`; if `LANG` is `C` or
-`POSIX` rather than something ending in `UTF-8`, set `LANG=C.UTF-8`. That
-locale is built into glibc, so nothing has to be generated first.
+The cheap one is the locale. Check it with `locale`; if `LANG` is `C` or
+`POSIX` rather than something ending in `UTF-8`, set `LANG=C.UTF-8`, which is
+built into glibc and needs nothing generated first.
 
 The other is the font. The Linux virtual console does not use the system's
-fonts: it draws with a console font that holds at most 512 glyphs, and the
-default one has no braille block. No locale setting changes that. Tell the two
-apart with
+fonts: it draws with a console font of at most 512 glyphs, and the default one
+has no braille block. No locale setting changes that. Tell the two apart with
 
 ```bash
 printf 'braille: [⠀⠁⣿]  blocks: [█▄▀]  box: [─│]\n'
 ```
 
 Whatever comes out as a box is missing from the font. If that is the braille,
-you have a choice: install a console font that has it, or draw the plots with
-something else.
+install a console font that has it, or draw the plots with something else.
 
 #### Give the console a braille font
 
-This is the better outcome — it keeps the full 2x4 resolution — and on Ubuntu
-it is one package. Debian and Ubuntu ship the braille console fonts separately
-from `console-setup`, which is why the example in `/etc/default/console-setup`
-refers to a file that is not there:
+This keeps the full 2x4 resolution, and on Ubuntu it is one package. Debian and
+Ubuntu ship the braille console fonts separately from `console-setup`, which is
+why the example in `/etc/default/console-setup` refers to a file that is not
+there:
 
 ```bash
 apt-get install -y console-braille
@@ -304,8 +342,8 @@ service restart, nothing touching Python or rECorD.
 The files are named `brl-HEIGHTxWIDTH.psf`, height first. Pick the one matching
 your console's cell, which `showconsolefont -i` reports as rows, columns and
 glyph count, and which `/etc/default/console-setup` states as `FONTSIZE` in the
-opposite order — `FONTSIZE="8x16"` is 8 wide and 16 high, so the braille font
-is `brl-16x8.psf`.
+opposite order: `FONTSIZE="8x16"` is 8 wide and 16 high, so the braille font is
+`brl-16x8.psf`.
 
 `setfont` combines several font files into one table, and every file has to
 have the same character height:
@@ -329,12 +367,12 @@ setupcon && update-initramfs -u
 `setupcon` on its own restores whatever the file says, which is the way back if
 a font looks wrong.
 
-The arithmetic is worth knowing before you pick the Latin half. The console
-holds 512 glyphs and braille alone is 256 of them, so it has to pair with a
-256-glyph font, and the remaining 256 must still cover the box-drawing `─`
-and `│` that the plot uses for its axis and header rule. That is what the
-`box:` part of the `printf` line is checking. Verified working on Ubuntu 24.04
-with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf` on an 8x16 console.
+Watch the arithmetic when picking the Latin half. The console holds 512 glyphs
+and braille alone is 256, so it pairs with a 256-glyph font whose remaining
+glyphs must still cover the box-drawing `─` and `│` the plot uses for its axis
+and header rule. That is what the `box:` part of the `printf` line checks.
+Verified on Ubuntu 24.04 with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf` on an
+8x16 console.
 
 #### Or draw the plots without braille
 
@@ -342,14 +380,14 @@ with `Lat15-Fixed16.psf.gz` and `brl-16x8.psf` on an 8x16 console.
 record-ec-visualizer-tui --demo --glyphs blocks
 ```
 
-Half blocks are in every console font, so this needs no font work at all. It
-costs resolution — half vertically, half horizontally, because a half block
-carries 1x2 dots where a braille cell carries 2x4 — which is why it is never
-chosen automatically. Nothing else changes: the same data, axes, header and
-gaps. `--glyphs blocks` works with a live site too, and applies to both plots.
+Half blocks are in every console font, so this needs no font work. It costs
+half the resolution each way, because a half block carries 1x2 dots where a
+braille cell carries 2x4, which is why it is never chosen automatically.
+Nothing else changes: the same data, axes, header and gaps. It works with a
+live site too, and applies to both plots.
 
-Over SSH from a workstation neither of these is needed. The font then comes
-from your own terminal, and braille works.
+Over SSH from a workstation neither of these is needed, since the font then
+comes from your own terminal.
 
 ### Find the site's record.toml
 
@@ -379,10 +417,10 @@ Failing all of that, search for it:
 sudo find / -name "record.toml" -not -path "*/site-packages/*" 2>/dev/null
 ```
 
-The `-not -path` is what keeps the example config that ships inside the
-`record` package out of the results. That one is stale — it writes the
-timestamp keys in a form rECorD no longer reads — and it holds no site's real
-addresses. The file on the command line is the only authoritative one.
+The `-not -path` keeps the example config shipped inside the `record` package
+out of the results. That one is stale, writing the timestamp keys in a form
+rECorD no longer reads, and it holds no site's real addresses. Use the file on
+the command line.
 
 ### Check the connection first
 
@@ -393,24 +431,23 @@ see whether the streams reach you at all:
 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --dump
 ```
 
-The analyzer addresses come from `record.toml`. The sonicshow group and port are
-defaults in rECorD's code (`sonicshow_ip` and `sonicshow_port` in
-`BaseReader.__init__`) and not entries in the config file, so you pass them
-separately. The easiest way to read them off a logging host is the `sonicshow`
-program installed alongside rECorD; its `-g` and `-p` defaults are the same
-values:
+The analyzer addresses come from `record.toml`. The sonicshow group and port
+are defaults in rECorD's code (`sonicshow_ip` and `sonicshow_port` in
+`BaseReader.__init__`) rather than config entries, so you pass them separately.
+The easiest way to read them off a logging host is the `sonicshow` program
+installed alongside rECorD, whose `-g` and `-p` defaults are the same values:
 
 ```bash
 sonicshow --help
 ```
 
-The dump also gives you the correct value for `--gas-var`. Analyzer records are
-printed twice: first as they arrive, with the instrument's own variable names,
-then again after the site's `var_map`, with the site's names. `--gas-var` has to
-come from the second line, since the raw names will never match. If the `after
-var_map` line does not appear at all, the `var_map` in the config does not fit
-what the analyzer sends, and the display would stay empty for the same reason.
-Once records from both streams appear, drop `--dump` and start the display.
+The dump also gives you the right value for `--gas-var`. Analyzer records are
+printed twice, first as they arrive with the instrument's own variable names,
+then again after the site's `var_map` with the site's names. `--gas-var` has to
+come from the second line, since the raw names never match. If the `after
+var_map` line does not appear at all, the `var_map` does not fit what the
+analyzer sends, and the display would stay empty for the same reason. Once
+records from both streams appear, drop `--dump` and start the display.
 
 ### Running it day to day
 
@@ -419,25 +456,25 @@ tmux new -s ecvis 'nice -n 10 record-ec-visualizer-tui --record-config /path/to/
 ```
 
 `--gas-var` takes the name confirmed in the `--dump` step. Omitting it selects
-the default `CO2`, which is only correct if the site's `var_map` produces that
-exact name. Add `--glyphs blocks` if this is the machine's own console rather
-than an SSH session, for the reason given under
+the default `CO2`, which is only right if the site's `var_map` produces that
+exact name. Add `--glyphs blocks` on the machine's own console rather than an
+SSH session, for the reason under
 [Run the demo once](#run-the-demo-once).
 
-Run the visualizer as the user that runs rECorD. That user can already read
-`record.toml`, and the session then belongs to the account operating the logger.
-Port access is not the reason. The visualizer shares the analyzer ports with
-rECorD's own subscriber, and both programs set `SO_REUSEADDR` and `SO_REUSEPORT`
-on the socket, which is what Linux requires for a shared UDP bind. Port sharing
-therefore works from any account. A startup failure with `OSError: [Errno 98]
-Address already in use` means the port is held by something other than rECorD.
+Run the visualizer as the user that runs rECorD, who can already read
+`record.toml`. Port access is not the reason: both programs set `SO_REUSEADDR`
+and `SO_REUSEPORT`, which is what Linux requires for a shared UDP bind, so
+sharing the analyzer ports works from any account. A startup failure with
+`OSError: [Errno 98] Address already in use` means the port is held by
+something other than rECorD.
 
 Run it inside tmux or screen, otherwise a dropped SSH connection takes the
 display down with it.
 
 Use `nice`. rECorD's 20 Hz loop warns whenever a cycle takes longer than 50 ms,
-and the visualizer runs on the same machine. Redrawing costs roughly 20 ms per
-second, so there is room to spare, but acquisition has priority.
+and the visualizer runs on the same machine. Redrawing both plots costs roughly
+50 ms per second at the default 60 s range and less at the longest, so there is
+room, but acquisition has priority.
 
 ### If nothing arrives
 
@@ -448,13 +485,13 @@ rECorD receives its own analyzer data that way, but check first:
 ip route show | grep 224
 ```
 
-There should be a `224.0.0.0/4 dev lo` route. The `udpmulticast` README explains
-how to add it, together with `ip link set multicast on lo`.
+There should be a `224.0.0.0/4 dev lo` route. The `udpmulticast` README
+explains how to add it, together with `ip link set multicast on lo`.
 
 If the route exists and nothing arrives, name the interface. `--interface`
-defaults to `0.0.0.0`, which leaves the choice to the kernel. On a host with a
-network card as well as loopback the kernel may pick the card, while these
-streams exist only on loopback:
+defaults to `0.0.0.0`, which leaves the choice to the kernel, and on a host
+with a network card as well as loopback the kernel may pick the card while
+these streams exist only on loopback:
 
 ```bash
 record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group <group> --sonicshow-port <port> --interface 127.0.0.1 --dump
@@ -463,8 +500,8 @@ record-ec-visualizer-tui --record-config /path/to/record.toml --sonicshow-group 
 The setting applies to every stream, sonicshow as well as analyzers.
 
 If only one of the two streams stays silent, the interface is not the cause.
-Check the address of that stream: the sonicshow address comes from the command
-line, the analyzer addresses from `record.toml`.
+Check that stream's address: the sonicshow address comes from the command line,
+the analyzer addresses from `record.toml`.
 
 ## Program layout
 
@@ -474,7 +511,9 @@ line, the analyzer addresses from `record.toml`.
 | `simulator.py` | Produces rECorD-format data for the demo |
 | `sources.py` | Delivers `(stream, line)` pairs, from the simulator or from multicast |
 | `model.py` | Keeps the recent values of each series, and when each stream was last heard from |
+| `game.py` | Scores breaths out of the CO2 stream, and runs the derby between them |
 | `tui/plot.py` | Draws the line plots, in braille or half blocks |
+| `tui/derby.py` | The Eddy Derby screen |
 | `tui/app.py` | The Textual application |
 
 `sources.py` is the boundary between live and simulated data. Everything above

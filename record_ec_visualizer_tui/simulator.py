@@ -21,6 +21,12 @@ The physics is deliberately shallow but not white noise: wind components are
 AR(1) processes so the traces look like turbulence, and the CO2 fluctuation is
 anti-correlated with the vertical wind so that w'c' has the sign of daytime
 uptake. It is a plausible-looking test signal, not a model of anything.
+
+:meth:`RecordSimulator.blow` adds a breath to the CO2 stream on demand, which
+is how the Eddy Derby is rehearsed and tested away from a site. It is the only
+thing here that anything downstream may ask for, and what it produces is still
+wire bytes: a simulated puff reaches the game through the decoder a live one
+would.
 """
 from __future__ import annotations
 
@@ -60,6 +66,21 @@ class SimulationConfig:
     sigma_co2: float = 1.1
     #: Strength of the w'/c' coupling. Positive gives a downward (uptake) flux.
     co2_flux_coupling: float = 2.2
+
+    #: Where a simulated reading is clipped, umol mol-1. Having a ceiling at
+    #: all is the point rather than a detail: a real blow pins the reading, and
+    #: the Eddy Derby is built around a score that still discriminates once it
+    #: has, so a simulator that let a puff run to 9000 unclipped would make the
+    #: game look like it worked when it did not. The figure is this simulator's
+    #: own ceiling and not a specification of any instrument; set it to what
+    #: the head at the site actually reports over.
+    co2_max_ppm: float = 3000.0
+
+    #: Shape of a simulated breath: how high it would go unclipped, how long it
+    #: takes to get there, and the time constant of the decay afterwards.
+    breath_peak_ppm: float = 9000.0
+    breath_rise_s: float = 0.4
+    breath_fall_s: float = 1.1
 
     #: Drop the analyzer stream for this long, this often, to exercise the
     #: staleness display. Set either to 0 to disable.
@@ -137,10 +158,54 @@ class RecordSimulator:
         self._records_since_show = 0
         self._sonic_buffer_fill = 0
         self._ndx = 0.0
+        self._breath_start: float | None = None
+        self._breath_strength = 1.0
 
     @property
     def dt(self) -> float:
         return 1.0 / self.config.sonic_freq_hz
+
+    def blow(self, strength: float | None = None) -> None:
+        """Breathe at the simulated inlet, starting from the next record.
+
+        The one place anything upstream of this module can be asked to do
+        something, and it exists so the Eddy Derby can be rehearsed and tested
+        without an analyzer. It stays a demo-only path: what it produces is
+        ordinary wire bytes, indistinguishable downstream from a real puff, so
+        the game is exercised through exactly the code a site would run.
+
+        :param strength: multiplier on :attr:`SimulationConfig.breath_peak_ppm`.
+            Random around 1 by default, so two demo breaths differ the way two
+            real ones do and the derby does not end in a dead heat.
+        """
+        self._breath_start = self._tick * self.dt
+        self._breath_strength = self._rng.uniform(0.7, 1.3) if strength is None else strength
+
+    def _breath_excess(self, elapsed: float) -> float:
+        """CO2 the current simulated breath is adding, umol mol-1.
+
+        A linear rise to the peak and an exponential decay after it -- the
+        shape an open-path head sees when a plume passes it, near enough for a
+        game. The tail is cut off once it is negligible so a breath cannot go
+        on contributing arithmetic forever.
+        """
+        if self._breath_start is None:
+            return 0.0
+        cfg = self.config
+        age = elapsed - self._breath_start
+        if age < 0.0:  # pragma: no cover - blow() never schedules backwards
+            return 0.0
+        if age < cfg.breath_rise_s:
+            # The cutoff below belongs to the decay only. Applied here it would
+            # fire on the first record of every breath, where the shape is
+            # legitimately zero, and cancel the breath before it began.
+            shape = age / cfg.breath_rise_s
+        else:
+            shape = math.exp(-(age - cfg.breath_rise_s) / cfg.breath_fall_s)
+            if shape < 0.001:
+                self._breath_start = None
+                return 0.0
+        return cfg.breath_peak_ppm * self._breath_strength * shape
 
     def _advance_wind(self) -> tuple[float, float, float, float]:
         """One AR(1) step of the turbulence, returning u, v, w and CO2."""
@@ -167,8 +232,11 @@ class RecordSimulator:
             + drift
             - cfg.co2_flux_coupling * (w / max(cfg.sigma_w, 1e-9)) * cfg.sigma_co2
             + cfg.sigma_co2 * state.co2 * 0.6
+            + self._breath_excess(elapsed)
         )
-        return u, v, w, co2
+        # Clipped where the instrument clips, so a simulated breath saturates
+        # the reading exactly as a real one does.
+        return u, v, w, min(co2, cfg.co2_max_ppm)
 
     def _in_dropout(self) -> bool:
         cfg = self.config

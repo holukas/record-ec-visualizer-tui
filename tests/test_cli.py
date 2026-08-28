@@ -28,12 +28,14 @@ def test_demo_flag_selects_the_simulator():
     from record_ec_visualizer_tui.__main__ import _build_simulated, build_parser
 
     args = build_parser().parse_args(["--demo"])
-    lines, state, subtitle = _build_simulated(args)
-    assert "simulated" in subtitle
-    assert state.gas_var == "CO2"
+    source = _build_simulated(args)
+    assert "simulated" in source.subtitle
+    assert source.state.gas_var == "CO2"
     # The simulator stands in for a site, units included.
-    assert state.gas_units == "umol mol-1"
-    asyncio.run(lines.aclose())  # never started; close it rather than leave it to the GC
+    assert source.state.gas_units == "umol mol-1"
+    # Only the simulator can be asked to breathe into its own inlet.
+    assert source.blow is not None
+    asyncio.run(source.lines.aclose())  # never started; close it rather than leave it to the GC
 
 
 def test_interface_reaches_every_endpoint(tmp_path, monkeypatch):
@@ -112,7 +114,7 @@ def test_the_gas_unit_comes_from_the_site_config(tmp_path):
         args = cli.build_parser().parse_args(
             ["--record-config", str(config), "--gas-var", variable]
         )
-        _, state, _ = cli._build_multicast(args, cli.build_parser())
+        state = cli._build_multicast(args, cli.build_parser()).state
         return state
 
     assert state_for("LI72_CO2_DRY").gas_units == "umol mol-1"
@@ -129,7 +131,7 @@ def test_a_config_without_units_says_nothing(tmp_path):
         "[gasanalyzers.irga]\nip = '239.0.0.1'\nport = 40000\n", encoding="utf-8"
     )
     args = cli.build_parser().parse_args(["--record-config", str(config)])
-    _, state, _ = cli._build_multicast(args, cli.build_parser())
+    state = cli._build_multicast(args, cli.build_parser()).state
     assert state.gas_units == ""
 
 

@@ -33,7 +33,9 @@ multicast  ───┘
 | `simulator.py` | `RecordSimulator` — emits rECorD-format **bytes**, not objects |
 | `sources.py` | `simulated_lines()` / `multicast_lines()`, both yielding `(stream, line)` |
 | `model.py` | `SeriesBuffer`, `StreamHealth`, `LiveState` — rolling state, no I/O |
+| `game.py` | `PuffDetector` / `EddyDerby` — the Eddy Derby's scoring and turns, no I/O |
 | `tui/plot.py` | `render_braille_plot()` → `rich.text.Text`, same shape as bico's |
+| `tui/derby.py` | The Eddy Derby screen |
 | `tui/app.py` | The Textual app; knows only about an async iterator of lines |
 
 Rules that keep the two paths identical:
@@ -319,6 +321,78 @@ on. Measured at 90 columns, the gas panel alone costs 1.9 ms/frame at 60 s
 (1200 points) and 4.4 ms at 240 s (4800), so at the 8 Hz refresh the longest
 window spends ~35 ms/s against ~16 ms/s for the default. That is affordable
 because it is opt-in and bounded; another doubling would not be.
+
+**The Eddy Derby (`game.py`, `tui/derby.py`) is scored on an integral, and
+that is the one thing about it that must not be simplified.** Breathe at the
+analyzer's inlet and the CO2 reading jumps from a few hundred umol mol-1 to
+thousands; the obvious score is the peak, and it cannot work. A breath at the
+inlet pins the reading at the top of whatever range the head reports over, so
+peaks tie there and the winner is whoever leaned in furthest. The score is
+therefore `sum (c - threshold) dt` over the samples above the threshold, in
+ppm*s: it keeps ranking blows after the reading saturates, because what is left
+to vary is how long it is held there. The simulator clips at `co2_max_ppm` for
+exactly this reason, since a simulated breath that ran on to 9000 unclipped
+would make a peak-based score look like it worked. That constant and
+`METER_MAX_PPM` are chosen ceilings, not measured instrument specifications:
+what a given head reports over is a per-site figure this repo does not know.
+The excess is measured **above the threshold, not above ambient**, which keeps
+the score continuous where a breath begins and keeps a background that drifts
+by more than 100 umol mol-1 between afternoon and night from handing out
+points.
+
+Five further rules, each of which a plausible simplification breaks:
+
+- **The detector is fed per record, from `ingest_ga`'s return value**, not
+  sampled from the display. The score is an integral over a 20 Hz stream and
+  reading the latest value eight times a second throws most of a breath away.
+  Nothing is integrated across a gap or a step longer than `MAX_SAMPLE_GAP_S`
+  either: the analyzer drops out, and the missing seconds must not be scored as
+  if the last value had held.
+- **A breath ends below the threshold, not at it.** The signal is noisy on the
+  falling flank, and one boundary chopped a single blow into five puffs and
+  passed the turn each time. `MAX_PUFF_SECONDS` caps the other end, because
+  what exhales for ten seconds is a bag over the head. The wait that buys this
+  has to be on screen: scoring stops the moment the reading crosses back below
+  the threshold, but the turn passes a second or more later, and a frozen
+  score under a stopped animal reads as a crash. The meter says `clearing`
+  through it, and `Puff.duration` measures to the last sample that scored
+  rather than to the last one seen, so the number is not still climbing while
+  the score stands still.
+- **The finish line is a fixed `DEFAULT_GOAL`**, 20,000 ppm*s, moved by
+  `--derby-goal`. It used to calibrate itself from the first breath of the
+  session, which adapted to the site automatically but made the number
+  unknowable before play started and left the opening lane with no scale to
+  move against. A fixed line is the same every session and can be printed on a
+  sign; what it gives up is the site adaptation, since how much a breath scores
+  depends on how close a mouth can get to the inlet, so a mast holding the head
+  out of reach makes a long derby and wants `--derby-goal`.
+- **Places are ranked, not handed out at the line** (`EddyDerby._rank`):
+  fewest breaths first, and a shared count settled on the higher total. P1
+  blows first in every round, so ordering by the moment of crossing gave P1
+  every derby that ended in a shared round, on the strength of the lane they
+  were given. A lane can therefore be shown a place and then lose it, until
+  the last player of that round has been scored. Two things fall out of it:
+  `Racer.crossed_on` records the lane's own breath number rather than a global
+  count, so a player who skips a turn is not penalised for it, and `_commit`
+  refuses a breath once everybody is across, since the turn parks on the last
+  finisher and their lane would otherwise keep collecting whatever the crowd
+  blows afterwards, which changes the totals a tie was settled on.
+- **`EddyDerby.at_the_inlet` is not `active`.** A racer crosses the line in
+  the middle of a breath, and until that breath is scored it is still theirs;
+  attributing the live puff by `active`, which empties as soon as a lane
+  finishes, sent the winning animal back to the start line for the second
+  between crossing and being committed.
+
+The derby is a `Screen`, and `_refresh` returns early while it is up. The live
+layout is frugal because every row it does not spend on decoration is a plot
+row, so a track wedged into it would cost those rows permanently for a game
+played at one open day; and drawing the pair of plots to a screen nobody can
+see is the most expensive thing this program could do with the time. Decoding
+is an app worker rather than anything a screen owns, so the buffers keep
+filling behind it. `on_blow` is the only channel that runs the other way,
+source-wards, and it is wired only under `--demo`: it asks the simulator for a
+breath, which then reaches the game as ordinary wire bytes through the decoder
+a live one would use.
 
 Headless tests drive the real app via `App.run_test`; see `tests/test_app.py`.
 Avoid `print()` inside a `run_test` block: Textual routes it through a cp1252

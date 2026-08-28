@@ -24,11 +24,13 @@ import argparse
 import asyncio
 import sys
 import tomllib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import DecodeError, VariableMap, parse_ga_message, parse_show_message
+from record_ec_visualizer_tui.game import DEFAULT_GOAL, MAX_PLAYERS, THRESHOLD_PPM, EddyDerby, PuffDetector
 from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM, RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import (
@@ -39,6 +41,22 @@ from record_ec_visualizer_tui.sources import (
 )
 from record_ec_visualizer_tui.tui.app import VisualizerApp
 from record_ec_visualizer_tui.tui.plot import GLYPH_SETS
+
+
+@dataclass
+class Source:
+    """Where the lines come from, plus what is needed to make sense of them.
+
+    ``blow`` is the one thing a source may offer beyond the lines themselves:
+    a way to ask it for a breath, so the derby can be shown and tested without
+    an analyzer. Only the simulator has one, and against a live site it stays
+    ``None`` and the key that would use it does nothing.
+    """
+
+    lines: AsyncIterator[tuple[str, bytes]]
+    state: LiveState
+    subtitle: str
+    blow: Callable[[], None] | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +89,33 @@ def build_parser() -> argparse.ArgumentParser:
             "on a terminal whose font has no braille, such as the Linux virtual "
             "console, where braille plots come out as rows of boxes; it costs half "
             "the resolution, so it is never selected automatically"
+        ),
+    )
+
+    derby = parser.add_argument_group("Eddy Derby (the 'g' key)")
+    derby.add_argument(
+        "--derby-goal",
+        type=float,
+        default=DEFAULT_GOAL,
+        help=(
+            f"finish line in ppm s (default: {DEFAULT_GOAL:,.0f}, about four or "
+            f"five hard breaths; raise it where the mast holds the head out of "
+            f"reach and a breath scores less)"
+        ),
+    )
+    derby.add_argument(
+        "--derby-players",
+        type=int,
+        default=2,
+        help=f"lanes to start with, 1 to {MAX_PLAYERS} (default: 2; add and drop them in the derby)",
+    )
+    derby.add_argument(
+        "--breath-threshold",
+        type=float,
+        default=THRESHOLD_PPM,
+        help=(
+            f"what a reading must exceed to score, in the analyzer's own units "
+            f"(default: {THRESHOLD_PPM:.0f}, well clear of anything the atmosphere does)"
         ),
     )
 
@@ -137,7 +182,7 @@ def _load_record_config(path: Path) -> dict:
         return tomllib.load(handle)
 
 
-def _build_simulated(args: argparse.Namespace) -> tuple[AsyncIterator[tuple[str, bytes]], LiveState, str]:
+def _build_simulated(args: argparse.Namespace) -> Source:
     config = SimulationConfig(seed=args.seed)
     if args.no_dropouts:
         config.dropout_every_s = 0.0
@@ -151,13 +196,15 @@ def _build_simulated(args: argparse.Namespace) -> tuple[AsyncIterator[tuple[str,
     subtitle = f"simulated · {config.ga_name}"
     if args.speedup != 1.0:
         subtitle += f" · {args.speedup:g}x"
-    return simulated_lines(simulator, speedup=args.speedup), state, subtitle
+    return Source(
+        lines=simulated_lines(simulator, speedup=args.speedup),
+        state=state,
+        subtitle=subtitle,
+        blow=simulator.blow,
+    )
 
 
-def _build_multicast(
-    args: argparse.Namespace,
-    parser: argparse.ArgumentParser,
-) -> tuple[AsyncIterator[tuple[str, bytes]], LiveState, str]:
+def _build_multicast(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Source:
     endpoints: list[MulticastEndpoint] = []
     sonic_map = VariableMap()
     gas_map = VariableMap()
@@ -201,7 +248,7 @@ def _build_multicast(
         gas_map=gas_map,
     )
     subtitle = "live · " + ", ".join(endpoint.name for endpoint in endpoints)
-    return multicast_lines(endpoints), state, subtitle
+    return Source(lines=multicast_lines(endpoints), state=state, subtitle=subtitle)
 
 
 async def _dump(lines: AsyncIterator[tuple[str, bytes]], state: LiveState) -> None:
@@ -251,24 +298,49 @@ def _reject_crossed_options(args: argparse.Namespace, parser: argparse.ArgumentP
         parser.error(f"{', '.join(offenders)} only applies to {owner}")
 
 
+def _check_derby_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Refuse derby settings that cannot be honoured, rather than clamping them.
+
+    Silently correcting a figure out of range would leave the operator watching
+    a game that is not the one they asked for, which is the same failure mode
+    ``_reject_crossed_options`` exists to prevent.
+    """
+    if not 1 <= args.derby_players <= MAX_PLAYERS:
+        parser.error(f"--derby-players must be between 1 and {MAX_PLAYERS}")
+    if args.derby_goal <= 0:
+        parser.error("--derby-goal must be positive")
+    if args.breath_threshold <= 0:
+        parser.error("--breath-threshold must be positive")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     _reject_crossed_options(args, parser)
+    _check_derby_options(args, parser)
 
-    if args.demo:
-        lines, state, subtitle = _build_simulated(args)
-    else:
-        lines, state, subtitle = _build_multicast(args, parser)
+    source = _build_simulated(args) if args.demo else _build_multicast(args, parser)
 
     if args.dump:
         try:
-            asyncio.run(_dump(lines, state))
+            asyncio.run(_dump(source.lines, source.state))
         except KeyboardInterrupt:
             pass
         return 0
 
-    VisualizerApp(lines, state, subtitle=subtitle, glyphs=GLYPH_SETS[args.glyphs]).run()
+    derby = EddyDerby(
+        players=args.derby_players,
+        goal=args.derby_goal,
+        detector=PuffDetector(threshold=args.breath_threshold),
+    )
+    VisualizerApp(
+        source.lines,
+        source.state,
+        subtitle=source.subtitle,
+        glyphs=GLYPH_SETS[args.glyphs],
+        derby=derby,
+        on_blow=source.blow,
+    ).run()
     return 0
 
 
