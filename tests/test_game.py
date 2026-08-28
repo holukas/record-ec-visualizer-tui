@@ -228,6 +228,66 @@ class TestEddyDerby:
         assert derby.standings == [first, second]
         assert derby.active is None
 
+    def test_a_tie_at_the_line_goes_to_the_higher_total(self):
+        """Same number of breaths, so the score is what separates them.
+
+        Crossing order would give it to P1 every time, since P1 blows first in
+        every round: that is the lane they were handed, not how they blew.
+        """
+        derby = EddyDerby(players=2, goal=1000.0)
+        first, second = derby.racers
+
+        elapsed = _blow(derby.detector, level=2000.0, seconds=1.5)
+        derby.feed(elapsed, 420.0)
+        elapsed += 0.05
+        elapsed = _blow(derby.detector, start=elapsed, level=3000.0, seconds=1.5)
+        derby.feed(elapsed, 420.0)
+
+        assert derby.over
+        assert first.crossed_on == 1 and second.crossed_on == 1
+        assert second.distance > first.distance
+        assert [racer.place for racer in (first, second)] == [2, 1]
+        assert derby.standings[0] is second
+
+    def test_crossing_in_fewer_breaths_beats_a_bigger_total(self):
+        """The tie-break is only for a tie: it does not outrank getting there."""
+        derby = EddyDerby(players=2, goal=2000.0)
+        first, second = derby.racers
+
+        elapsed = _blow(derby.detector, level=3000.0, seconds=1.5)
+        derby.feed(elapsed, 420.0)
+        elapsed += 0.05
+        assert first.crossed_on == 1
+
+        for level, seconds in ((1500.0, 1.0), (3000.0, 2.0)):
+            elapsed = _blow(derby.detector, start=elapsed, level=level, seconds=seconds)
+            derby.feed(elapsed, 420.0)
+            elapsed += 0.05
+
+        assert derby.over
+        assert second.crossed_on == 2
+        assert second.distance > first.distance
+        assert [racer.place for racer in (first, second)] == [1, 2]
+
+    def test_nothing_is_scored_once_everybody_is_across(self):
+        """The turn parks on the last finisher, whose lane must stop counting."""
+        derby = EddyDerby(players=2, goal=1000.0)
+        first, second = derby.racers
+
+        elapsed = 0.0
+        for _ in range(2):
+            elapsed = _blow(derby.detector, start=elapsed, level=3000.0, seconds=1.0)
+            derby.feed(elapsed, 420.0)
+            elapsed += 0.05
+        assert derby.over
+        settled = [racer.distance for racer in (first, second)]
+
+        for _ in range(3):
+            elapsed = _blow(derby.detector, start=elapsed, level=3000.0, seconds=1.0)
+            derby.feed(elapsed, 420.0)
+            elapsed += 0.05
+        assert [racer.distance for racer in (first, second)] == settled
+
     def test_the_turn_passes_without_a_breath_when_a_player_walks_off(self):
         derby = EddyDerby(players=3)
         derby.skip_turn()

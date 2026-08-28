@@ -30,6 +30,10 @@ Notable changes to this project, newest first. Version numbers follow
   less where the mast holds the inlet out of reach, which makes a longer derby;
   `--derby-goal` moves the line. `--derby-players` and `--breath-threshold` set
   the lanes and the level that counts.
+- Lanes that cross on the same numbered breath are placed by their total score.
+  P1 opens every round, so ranking by the moment of crossing handed P1 any
+  derby that finished level. Fewer breaths still wins outright, and a place can
+  change until the last player of the round has been scored.
 - `b` breathes for you under `--demo`, where there is no inlet to breathe into.
   The simulator puts the breath on the wire as bytes and clips it at the
   analyzer's 3000 umol mol-1 range, so it reaches the game through the same

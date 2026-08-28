@@ -338,7 +338,7 @@ the score continuous where a breath begins and keeps a background that drifts
 by more than 100 umol mol-1 between afternoon and night from handing out
 points.
 
-Four further rules, each of which a plausible simplification breaks:
+Five further rules, each of which a plausible simplification breaks:
 
 - **The detector is fed per record, from `ingest_ga`'s return value**, not
   sampled from the display. The score is an integral over a 20 Hz stream and
@@ -358,6 +358,17 @@ Four further rules, each of which a plausible simplification breaks:
   sign; what it gives up is the site adaptation, since how much a breath scores
   depends on how close a mouth can get to the inlet, so a mast holding the head
   out of reach makes a long derby and wants `--derby-goal`.
+- **Places are ranked, not handed out at the line** (`EddyDerby._rank`):
+  fewest breaths first, and a shared count settled on the higher total. P1
+  blows first in every round, so ordering by the moment of crossing gave P1
+  every derby that ended in a shared round, on the strength of the lane they
+  were given. A lane can therefore be shown a place and then lose it, until
+  the last player of that round has been scored. Two things fall out of it:
+  `Racer.crossed_on` records the lane's own breath number rather than a global
+  count, so a player who skips a turn is not penalised for it, and `_commit`
+  refuses a breath once everybody is across, since the turn parks on the last
+  finisher and their lane would otherwise keep collecting whatever the crowd
+  blows afterwards, which changes the totals a tie was settled on.
 - **`EddyDerby.at_the_inlet` is not `active`.** A racer crosses the line in
   the middle of a breath, and until that breath is scored it is still theirs;
   attributing the live puff by `active`, which empties as soon as a lane

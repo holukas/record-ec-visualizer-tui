@@ -247,12 +247,16 @@ class Racer:
     breaths: int = 0
     best_breath: float = 0.0
     peak: float = 0.0
-    #: Finishing position, once across the line.
+    #: Which of this lane's own breaths carried it over the line, counting
+    #: from 1, or ``None`` while it is still running.
+    crossed_on: int | None = None
+    #: Finishing position, recomputed by :meth:`EddyDerby._rank` whenever the
+    #: order can have changed, so it is not final until the derby is over.
     place: int | None = None
 
     @property
     def finished(self) -> bool:
-        return self.place is not None
+        return self.crossed_on is not None
 
 
 @dataclass
@@ -345,7 +349,7 @@ class EddyDerby:
 
     @property
     def standings(self) -> list[Racer]:
-        """Everyone across the line, in the order they crossed."""
+        """Everyone across the line, best first. See :meth:`_rank`."""
         return list(self._finished)
 
     def distance_of(self, racer: Racer) -> float:
@@ -369,8 +373,9 @@ class EddyDerby:
         if racer is not None and self.goal and self.distance_of(racer) >= self.goal:
             # Crossing is judged live, so the animal stops at the line during
             # the breath that got it there rather than a second later when that
-            # breath is finally scored.
-            self._finish(racer)
+            # breath is finally scored. That breath is not counted yet, which
+            # is why the number it crossed on is one past the tally.
+            self._finish(racer, racer.breaths + 1)
 
         for puff in self.detector.pop_completed():
             self._commit(puff)
@@ -379,18 +384,50 @@ class EddyDerby:
         racer = self.racers[self.turn] if self.turn < len(self.racers) else None
         if racer is None:  # pragma: no cover - defensive
             return
+        if racer.finished and racer.breaths >= racer.crossed_on:
+            # Everybody is across, so the turn had nowhere to pass to and is
+            # parked on the last finisher, whose lane would otherwise collect
+            # whatever anyone blows at the inlet afterwards. Their own crossing
+            # breath is not this one: it is scored the call after the line was
+            # judged live, while the tally is still one short of it.
+            return
         racer.distance += puff.score
         racer.breaths += 1
         racer.best_breath = max(racer.best_breath, puff.score)
         racer.peak = max(racer.peak, puff.peak)
 
         if not racer.finished and racer.distance >= self.goal:
-            self._finish(racer)
+            self._finish(racer, racer.breaths)
+        else:
+            # A lane that crossed mid-breath is across the line already, but
+            # the breath that took it there has only now been scored, and the
+            # total it adds is what a tie is settled on.
+            self._rank()
         self._next_turn()
 
-    def _finish(self, racer: Racer) -> None:
-        racer.place = len(self._finished) + 1
+    def _finish(self, racer: Racer, crossed_on: int) -> None:
+        racer.crossed_on = crossed_on
         self._finished.append(racer)
+        self._rank()
+
+    def _rank(self) -> None:
+        """Order the finishers: fewest breaths first, then the higher total.
+
+        Crossing order alone would hand first place to whoever blows earliest
+        in the round, which is a property of the lane they were given rather
+        than of how hard they blew: with two players P1 always goes first, so
+        P1 took every derby that ended in a shared round. Players who need the
+        same number of breaths are level on that count, and the score they
+        did it with separates them.
+
+        A lane can therefore be shown a place and then lose it, up until the
+        last player of the round has been scored. That is the tie being
+        settled, and it is why :attr:`Racer.place` is recomputed rather than
+        handed out once at the line.
+        """
+        self._finished.sort(key=lambda racer: (racer.crossed_on, -racer.distance))
+        for position, racer in enumerate(self._finished, start=1):
+            racer.place = position
 
     def _next_turn(self) -> None:
         """Pass to the next lane still in the derby, if there is one."""

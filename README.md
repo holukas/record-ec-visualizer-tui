@@ -141,6 +141,11 @@ mast that holds the head out of reach the derby runs long: `--derby-goal` moves
 the line. `--derby-players` starts with more than two lanes, and
 `--breath-threshold` moves the level that counts.
 
+Players who cross on the same numbered breath are separated by their total
+score, not by who blew first: with two lanes P1 always opens the round, and
+ranking by the moment of crossing would hand P1 anything that finished level.
+Getting there in fewer breaths still wins outright.
+
 On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane, `n`
 passes a turn for a player who has stepped away, and `escape` goes back to the
 plots. Nothing is drawn behind the derby while it is up, so the game costs
