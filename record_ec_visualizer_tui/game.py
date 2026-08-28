@@ -254,6 +254,11 @@ class Racer:
         return self.place is not None
 
 
+def _goal_from_first_breath(score: float) -> float:
+    """The finish line a first breath of ``score`` ppm*s calibrates."""
+    return max(MIN_GOAL, score * GOAL_BREATHS)
+
+
 @dataclass
 class EddyDerby:
     """Racers, turns and a finish line, driven by :class:`PuffDetector`.
@@ -357,11 +362,33 @@ class EddyDerby:
             return racer.distance + puff.score
         return racer.distance
 
+    @property
+    def effective_goal(self) -> float | None:
+        """The finish line to draw the lanes against, or ``None`` before there is one.
+
+        Provisional while the first breath of the session is still going, since
+        the committed goal does not exist until that breath is scored. Dividing
+        by nothing pinned that one lane to the start line until the player
+        stopped blowing, which is exactly the rule this class opens by stating
+        that it does not do: every other breath moves its animal live.
+
+        The provisional figure is what :meth:`_commit` will calculate from the
+        same breath, so the animal is in the same place the moment before it is
+        scored as the moment after. It follows that a first breath runs a fifth
+        of the track and then holds there however long it lasts, which is not a
+        stall but what calibrating the finish line from it means.
+        """
+        if self.goal:
+            return self.goal
+        puff = self.detector.active
+        return None if puff is None else _goal_from_first_breath(puff.score)
+
     def fraction_of(self, racer: Racer) -> float:
         """How far along the track this lane is, 0 to 1."""
-        if not self.goal:
+        goal = self.effective_goal
+        if not goal:
             return 0.0
-        return min(1.0, self.distance_of(racer) / self.goal)
+        return min(1.0, self.distance_of(racer) / goal)
 
     def feed(self, elapsed: float, value: float | None) -> None:
         """Take one CO2 sample: run the detector, then move the lanes."""
@@ -387,7 +414,7 @@ class EddyDerby:
         racer.peak = max(racer.peak, puff.peak)
 
         if self.goal is None:
-            self.goal = max(MIN_GOAL, puff.score * GOAL_BREATHS)
+            self.goal = _goal_from_first_breath(puff.score)
         if not racer.finished and racer.distance >= self.goal:
             self._finish(racer)
         self._next_turn()

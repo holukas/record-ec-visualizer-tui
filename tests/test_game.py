@@ -152,6 +152,41 @@ class TestEddyDerby:
         derby.feed(elapsed, 420.0)
         assert derby.goal == pytest.approx(2000.0 * GOAL_BREATHS, rel=0.05)
 
+    def test_the_first_breath_moves_its_lane_while_it_is_still_going(self):
+        """The uncalibrated lane used to sit at the start until the breath ended.
+
+        It is the one case where the game did not do what it says it does, and
+        it is the case every session opens with.
+        """
+        derby = EddyDerby(players=2)
+        first = derby.racers[0]
+
+        elapsed = 0.0
+        derby.feed(elapsed, 420.0)
+        elapsed += 0.05
+        for _ in range(3):
+            derby.feed(elapsed, 3000.0)
+            elapsed += 0.05
+
+        assert derby.goal is None  # the breath has not ended, so nothing is committed
+        moving = derby.fraction_of(first)
+        assert moving > 0.0  # and the animal has left the line anyway
+
+        for _ in range(37):
+            derby.feed(elapsed, 3000.0)
+            elapsed += 0.05
+        assert derby.fraction_of(first) >= moving
+
+        before = derby.fraction_of(first)
+        for _ in range(40):
+            derby.feed(elapsed, 420.0)
+            elapsed += 0.05
+
+        assert derby.goal is not None
+        # Scoring the breath must not move the animal, in either direction: the
+        # provisional finish line is the one the breath goes on to set.
+        assert derby.fraction_of(first) == pytest.approx(before, abs=0.01)
+
     def test_a_breath_moves_the_lane_whose_turn_it_is_and_then_passes_it(self):
         derby = EddyDerby(players=2, goal=100_000.0)
         first, second = derby.racers
