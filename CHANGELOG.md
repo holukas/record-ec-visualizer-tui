@@ -17,16 +17,15 @@ Notable changes to this project, newest first. Version numbers follow
   screen, `r` restarts, `a` and `x` add and drop a lane, `n` passes a turn, and
   `escape` goes back to the plots.
 - A breath scores the area under its peak, in ppm s, above 1000 umol mol-1. The
-  peak value would not do: an open-path head measures to about 3000 and breath
-  is more than ten times that, so anyone who leans close pins it and the peaks
-  all tie.
+  peak value would not do: a breath at the inlet pins the reading at the top of
+  whatever range the head reports over, so the peaks all tie there.
 - The finish line is 20,000 ppm s, four or five hard breaths, the same every
   session. Lanes that cross on the same numbered breath are placed by total
   score. `--derby-goal`, `--derby-players` and `--breath-threshold` set the
   line, the lanes and the level that counts.
 - `b` breathes for you under `--demo`. The simulator puts it on the wire as
-  bytes and clips it at the analyzer's 3000 umol mol-1 range, so it reaches the
-  game through the same decoder a real one would.
+  bytes and clips it at its configured ceiling, so it reaches the game through
+  the same decoder a real one would, saturation included.
 
 ### Changed
 

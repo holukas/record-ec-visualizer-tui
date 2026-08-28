@@ -173,9 +173,9 @@ class TestBreath:
     """``blow()`` is how the Eddy Derby is rehearsed away from a site.
 
     It has to produce the same thing a real breath does, which for a game
-    scored on the area under the peak means one property above all: it
-    saturates. A simulated puff that ran on to 9000 would make a peak-based
-    score look like it worked.
+    scored on the area under the peak means one property above all: it clips at
+    the configured ceiling. A simulated puff that ran on to 9000 unclipped would
+    make a peak-based score look like it worked.
     """
 
     def test_a_breath_lifts_the_co2_stream_and_comes_back_down(self):

@@ -8,15 +8,12 @@ values that already arrive: it reads the stream and never touches it.
 
 **The score is the area under the peak**, ``sum (c - threshold) dt`` over the
 samples above the threshold, in ppm*s. The obvious score is the peak value,
-and it does not work: an open-path head measures over a range ending around
-3000 umol mol-1, exhaled breath is more than ten times that, and anyone who
-gets close to the inlet pins the reading. Peaks would tie at the top of the
-scale and the winner would be whoever leaned in furthest. An integral keeps
-discriminating after the sensor saturates, because what is left to vary is how
-long the breath holds it there -- which is the thing worth measuring anyway. It
-is also the same operation the flux processing performs, over one breath
-instead of half an hour, which is the sentence this whole feature exists to
-earn.
+and it does not work: a breath at the inlet can pin the reading at the top of
+whatever range the head reports over, so peaks tie there and the winner is
+whoever leaned in furthest. An integral keeps discriminating after the reading
+saturates, because what is left to vary is how long the breath holds it there.
+It is also the same operation the flux processing performs, over one breath
+instead of half an hour.
 
 The excess is measured **above the threshold rather than above ambient**, so
 the score is continuous where a breath begins: a blow that barely crosses the

@@ -325,14 +325,16 @@ because it is opt-in and bounded; another doubling would not be.
 **The Eddy Derby (`game.py`, `tui/derby.py`) is scored on an integral, and
 that is the one thing about it that must not be simplified.** Breathe at the
 analyzer's inlet and the CO2 reading jumps from a few hundred umol mol-1 to
-thousands; the obvious score is the peak, and it cannot work. An open-path head
-measures to about 3000 umol mol-1 and exhaled breath is more than ten times
-that, so anyone who leans close pins the reading and every peak ties at the top
-of the scale. The score is therefore `sum (c - threshold) dt` over the samples
-above the threshold, in ppm*s: it keeps ranking blows after the sensor
-saturates, because what is left to vary is how long the reading is held there.
-The simulator clips at `co2_max_ppm` for exactly this reason — a simulated
-breath that ran on to 9000 would make a peak-based score look like it worked.
+thousands; the obvious score is the peak, and it cannot work. A breath at the
+inlet pins the reading at the top of whatever range the head reports over, so
+peaks tie there and the winner is whoever leaned in furthest. The score is
+therefore `sum (c - threshold) dt` over the samples above the threshold, in
+ppm*s: it keeps ranking blows after the reading saturates, because what is left
+to vary is how long it is held there. The simulator clips at `co2_max_ppm` for
+exactly this reason, since a simulated breath that ran on to 9000 unclipped
+would make a peak-based score look like it worked. That constant and
+`METER_MAX_PPM` are chosen ceilings, not measured instrument specifications:
+what a given head reports over is a per-site figure this repo does not know.
 The excess is measured **above the threshold, not above ambient**, which keeps
 the score continuous where a breath begins and keeps a background that drifts
 by more than 100 umol mol-1 between afternoon and night from handing out

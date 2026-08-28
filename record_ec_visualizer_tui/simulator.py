@@ -67,12 +67,13 @@ class SimulationConfig:
     #: Strength of the w'/c' coupling. Positive gives a downward (uptake) flux.
     co2_flux_coupling: float = 2.2
 
-    #: Top of the analyzer's measurement range, umol mol-1. An open-path head
-    #: reads to roughly here and no further, and simulating that limit is the
-    #: point rather than a detail: exhaled breath is over ten times it, so a
-    #: real blow pins the reading, and the Eddy Derby is built around a score
-    #: that still discriminates once it has. A simulator that let a puff run to
-    #: 9000 would make the game look like it worked when it did not.
+    #: Where a simulated reading is clipped, umol mol-1. Having a ceiling at
+    #: all is the point rather than a detail: a real blow pins the reading, and
+    #: the Eddy Derby is built around a score that still discriminates once it
+    #: has, so a simulator that let a puff run to 9000 unclipped would make the
+    #: game look like it worked when it did not. The figure is this simulator's
+    #: own ceiling and not a specification of any instrument; set it to what
+    #: the head at the site actually reports over.
     co2_max_ppm: float = 3000.0
 
     #: Shape of a simulated breath: how high it would go unclipped, how long it

@@ -29,10 +29,11 @@ from textual.widgets import Footer, Header, Static
 from record_ec_visualizer_tui.game import EddyDerby, Racer
 from record_ec_visualizer_tui.model import LiveState
 
-#: Top of the live meter, umol mol-1: the measurement range of an open-path
-#: head, which is also where a real breath pins it. A meter scaled to the
-#: reading instead would rescale on every puff and show nothing about how close
-#: to saturation the number is.
+#: Top of the live meter, umol mol-1. It scales the bar and nothing else: what
+#: scores is the threshold, and a reading past this simply fills the bar. A
+#: fixed ceiling rather than one scaled to the reading, which would rescale on
+#: every puff and show nothing about how close to the top the number is. Raise
+#: it if the head at the site reports over a wider range.
 METER_MAX_PPM = 3000.0
 
 #: Cells of the CO2 meter bar.

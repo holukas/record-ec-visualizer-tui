@@ -113,11 +113,11 @@ through that second or so, when the score and the animal both stand still.
 
 **The score is the area under the peak**, in ppm s, and that is not a
 decoration. The highest reading would be the obvious score and it does not
-work: an open-path head measures to about 3000 umol mol-1 and breath is more
-than ten times that, so everyone who leans close pins the sensor and every peak
-ties at the top of the scale. An integral keeps ranking blows after the reading
-saturates, and it is the same operation the flux processing performs, over one
-breath instead of half an hour.
+work: a breath at the inlet pins the reading at the top of whatever range the
+head reports over, so the peaks tie there and the winner is whoever leaned in
+furthest. An integral keeps ranking blows after the reading saturates, and it
+is the same operation the flux processing performs, over one breath instead of
+half an hour.
 
 The finish line is 20,000 ppm s, about four or five hard breaths, so every
 derby is the same length and the number can go on a sign next to the mast. A

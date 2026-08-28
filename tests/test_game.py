@@ -66,10 +66,9 @@ class TestPuffDetector:
     def test_a_saturated_breath_still_ranks_by_how_long_it_lasts(self):
         """The reason the score is an integral at all.
 
-        An open-path head stops at about 3000 umol mol-1 and breath is far
-        above that, so two blows that both pin the reading have identical
-        peaks. What still separates them is duration, and the score has to see
-        it.
+        Two blows that both pin the reading at the top of the head's range have
+        identical peaks. What still separates them is duration, and the score
+        has to see it.
         """
         short, long = PuffDetector(), PuffDetector()
         _blow(short, level=3000.0, seconds=1.0)
