@@ -14,7 +14,9 @@ Notable changes to this project, newest first. Version numbers follow
   lungs". It is for open days and visitors, on the instrument that is already
   running.
 - Each player takes a turn at the inlet, and an ASCII animal runs along their
-  lane while they blow. The turn passes to the next lane when the breath ends.
+  lane while they blow. The turn passes to the next lane once the air is clear
+  of the breath, and the meter says `clearing` while it waits, since the score
+  and the animal both stand still for that second.
   On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane,
   `n` passes a turn for someone who has stepped away, and `escape` goes back to
   the plots.

@@ -107,14 +107,16 @@ class Puff:
     peak: float
     #: ppm*s above the threshold so far. Accumulates while the breath is open.
     score: float = 0.0
-    #: When the last sample of this breath arrived, so a breath in progress can
-    #: still report how long it has been going.
+    #: When this breath last scored, so one in progress can report how long it
+    #: has been going. Not the last sample seen: the detector holds a breath
+    #: open through the quiet that follows it, and counting that in would have
+    #: the number climbing for a second after the player stopped blowing.
     last: float = 0.0
     ended: float | None = None
 
     @property
     def duration(self) -> float:
-        return max(0.0, (self.ended if self.ended is not None else self.last) - self.started)
+        return max(0.0, self.last - self.started)
 
     @property
     def is_open(self) -> bool:
@@ -192,7 +194,6 @@ class PuffDetector:
             puff.last = elapsed
             self._below_since = None
         elif self._active is not None:
-            self._active.last = elapsed
             if value > self.release:
                 # On the way down, but not clear of the breath yet.
                 self._below_since = None

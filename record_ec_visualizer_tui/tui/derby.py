@@ -186,9 +186,16 @@ class DerbyScreen(Screen[None]):
             text.append(f"  ambient {ambient:.0f}", style="grey50")
 
         puff = self.derby.detector.active
-        if puff is not None:
+        if puff is not None and counting:
             text.append(f"   this breath {puff.score:,.0f} ppm s", style="bold")
             text.append(f" ({puff.duration:.1f} s)", style="grey50")
+        elif puff is not None:
+            # The breath has stopped scoring, but the detector holds it open
+            # until the air is clear of it, and the turn passes only then. That
+            # is a second or more of a frozen score and a stopped animal, which
+            # reads as a game that has crashed rather than one that is waiting.
+            text.append(f"   breath over at {puff.score:,.0f} ppm s", style="bold")
+            text.append(" - clearing", style="yellow")
         elif getattr(self.app, "paused", False):
             # Space pauses the whole app, records included, which stops the
             # game dead. Saying so beats the staleness message below, which

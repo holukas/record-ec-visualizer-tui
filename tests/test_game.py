@@ -126,6 +126,30 @@ class TestPuffDetector:
             elapsed += 0.05
         assert detector.pop_completed() == []
 
+    def test_a_breath_is_not_still_getting_longer_after_it_stops_scoring(self):
+        """The quiet the detector waits through is not part of the breath.
+
+        The breath is held open until the air is clear, and the reported
+        duration used to climb throughout: a 3 s blow read as 4.4 s, still
+        counting, while the score beside it stood still.
+        """
+        detector = PuffDetector()
+        elapsed = 0.0
+        detector.feed(elapsed, 420.0)
+        elapsed += 0.05
+        for _ in range(40):
+            detector.feed(elapsed, 3000.0)
+            elapsed += 0.05
+
+        blowing = detector.active.duration
+        assert blowing == pytest.approx(2.0, abs=0.1)
+
+        for _ in range(5):  # below the threshold, but the breath is still open
+            detector.feed(elapsed, 800.0)
+            elapsed += 0.05
+        assert detector.active is not None
+        assert detector.active.duration == pytest.approx(blowing, abs=0.001)
+
     def test_the_threshold_carries_its_hysteresis_with_it(self):
         """A site raising the threshold keeps the gap that stops the chopping."""
         detector = PuffDetector(threshold=5000.0)

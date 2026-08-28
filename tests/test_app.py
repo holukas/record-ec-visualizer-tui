@@ -596,17 +596,25 @@ class TestEddyDerbyScreen:
                 # the whole feel of the game, and it is only possible because
                 # the analyzer delivers at 20 Hz.
                 moved_during = 0.0
-                for _ in range(40):
+                clearing = False
+                for _ in range(60):
                     await asyncio.sleep(0.05)
                     moved_during = max(moved_during, app.derby.distance_of(first))
+                    clearing = clearing or "clearing" in _plain(
+                        app.screen.query_one("#derby", Static)
+                    )
                     if first.breaths:
                         break
                 await pilot.pause()
-                return moved_during, first, second, app.derby
+                return moved_during, clearing, first, second, app.derby
 
-        moved_during, first, second, derby = asyncio.run(scenario())
+        moved_during, clearing, first, second, derby = asyncio.run(scenario())
         assert moved_during > 0, "the lane never moved"
         assert first.breaths == 1, "the breath was never scored"
         assert first.peak > 1000.0
         # One breath, and the turn passes.
         assert derby.active is second
+        # The detector holds the breath open until the air is clear of it, and
+        # for that second or so the score and the animal are both frozen. The
+        # screen has to say why, or it reads as a game that has hung.
+        assert clearing, "nothing on screen explained the wait before the turn passed"

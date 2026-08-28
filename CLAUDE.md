@@ -349,7 +349,13 @@ Five further rules, each of which a plausible simplification breaks:
 - **A breath ends below the threshold, not at it.** The signal is noisy on the
   falling flank, and one boundary chopped a single blow into five puffs and
   passed the turn each time. `MAX_PUFF_SECONDS` caps the other end, because
-  what exhales for ten seconds is a bag over the head.
+  what exhales for ten seconds is a bag over the head. The wait that buys this
+  has to be on screen: scoring stops the moment the reading crosses back below
+  the threshold, but the turn passes a second or more later, and a frozen
+  score under a stopped animal reads as a crash. The meter says `clearing`
+  through it, and `Puff.duration` measures to the last sample that scored
+  rather than to the last one seen, so the number is not still climbing while
+  the score stands still.
 - **The finish line is a fixed `DEFAULT_GOAL`**, 20,000 ppm*s, moved by
   `--derby-goal`. It used to calibrate itself from the first breath of the
   session, which adapted to the site automatically but made the number
