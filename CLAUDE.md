@@ -33,9 +33,9 @@ multicast  ───┘
 | `simulator.py` | `RecordSimulator` — emits rECorD-format **bytes**, not objects |
 | `sources.py` | `simulated_lines()` / `multicast_lines()`, both yielding `(stream, line)` |
 | `model.py` | `SeriesBuffer`, `StreamHealth`, `LiveState` — rolling state, no I/O |
-| `game.py` | `PuffDetector` / `BreathRace` — the breath race's scoring and turns, no I/O |
+| `game.py` | `PuffDetector` / `EddyDerby` — the Eddy Derby's scoring and turns, no I/O |
 | `tui/plot.py` | `render_braille_plot()` → `rich.text.Text`, same shape as bico's |
-| `tui/race.py` | The breath race screen |
+| `tui/derby.py` | The Eddy Derby screen |
 | `tui/app.py` | The Textual app; knows only about an async iterator of lines |
 
 Rules that keep the two paths identical:
@@ -322,7 +322,7 @@ on. Measured at 90 columns, the gas panel alone costs 1.9 ms/frame at 60 s
 window spends ~35 ms/s against ~16 ms/s for the default. That is affordable
 because it is opt-in and bounded; another doubling would not be.
 
-**The breath race (`game.py`, `tui/race.py`) is scored on an integral, and
+**The Eddy Derby (`game.py`, `tui/derby.py`) is scored on an integral, and
 that is the one thing about it that must not be simplified.** Breathe at the
 analyzer's inlet and the CO2 reading jumps from a few hundred umol mol-1 to
 thousands; the obvious score is the peak, and it cannot work. An open-path head
@@ -351,16 +351,16 @@ Four further rules, each of which a plausible simplification breaks:
   passed the turn each time. `MAX_PUFF_SECONDS` caps the other end, because
   what exhales for ten seconds is a bag over the head.
 - **The finish line calibrates itself from the first breath** unless
-  `--race-goal` says otherwise. The score depends on how far a mouth is from
+  `--derby-goal` says otherwise. The score depends on how far a mouth is from
   the inlet, which is a property of the site's mast rather than of the player,
   so no constant is right everywhere.
-- **`BreathRace.at_the_inlet` is not `active`.** A racer crosses the line in
+- **`EddyDerby.at_the_inlet` is not `active`.** A racer crosses the line in
   the middle of a breath, and until that breath is scored it is still theirs;
   attributing the live puff by `active`, which empties as soon as a lane
   finishes, sent the winning animal back to the start line for the second
   between crossing and being committed.
 
-The race is a `Screen`, and `_refresh` returns early while it is up. The live
+The derby is a `Screen`, and `_refresh` returns early while it is up. The live
 layout is frugal because every row it does not spend on decoration is a plot
 row, so a track wedged into it would cost those rows permanently for a game
 played at one open day; and drawing the pair of plots to a screen nobody can

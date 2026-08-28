@@ -425,8 +425,8 @@ class LiveState:
     def ingest_ga(self, record: Mapping[str, Any]) -> tuple[float, float | None]:
         """Take one decoded raw gas analyzer record into the rolling state.
 
-        Returns the ``(elapsed, value)`` it appended, which is what the breath
-        race is fed from. It has to come from here rather than be read back off
+        Returns the ``(elapsed, value)`` it appended, which is what the Eddy
+        Derby is fed from. It has to come from here rather than be read back off
         the buffer afterwards: the game scores an integral, so it needs every
         sample and the moment each one arrived, and a caller sampling the
         latest value at the display rate would both miss most of a 20 Hz stream

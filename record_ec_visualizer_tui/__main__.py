@@ -30,7 +30,7 @@ from pathlib import Path
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import DecodeError, VariableMap, parse_ga_message, parse_show_message
-from record_ec_visualizer_tui.game import MAX_PLAYERS, THRESHOLD_PPM, BreathRace, PuffDetector
+from record_ec_visualizer_tui.game import MAX_PLAYERS, THRESHOLD_PPM, EddyDerby, PuffDetector
 from record_ec_visualizer_tui.model import LiveState
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM, RecordSimulator, SimulationConfig
 from record_ec_visualizer_tui.sources import (
@@ -48,7 +48,7 @@ class Source:
     """Where the lines come from, plus what is needed to make sense of them.
 
     ``blow`` is the one thing a source may offer beyond the lines themselves:
-    a way to ask it for a breath, so the race can be shown and tested without
+    a way to ask it for a breath, so the derby can be shown and tested without
     an analyzer. Only the simulator has one, and against a live site it stays
     ``None`` and the key that would use it does nothing.
     """
@@ -92,9 +92,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    race = parser.add_argument_group("breath race (the 'g' key)")
-    race.add_argument(
-        "--race-goal",
+    derby = parser.add_argument_group("Eddy Derby (the 'g' key)")
+    derby.add_argument(
+        "--derby-goal",
         type=float,
         help=(
             "finish line in ppm s (default: five times the first breath of the "
@@ -102,13 +102,13 @@ def build_parser() -> argparse.ArgumentParser:
             "player's mouth and no fixed figure suits every mast)"
         ),
     )
-    race.add_argument(
-        "--race-players",
+    derby.add_argument(
+        "--derby-players",
         type=int,
         default=2,
-        help=f"lanes to start with, 1 to {MAX_PLAYERS} (default: 2; add and drop them in the race)",
+        help=f"lanes to start with, 1 to {MAX_PLAYERS} (default: 2; add and drop them in the derby)",
     )
-    race.add_argument(
+    derby.add_argument(
         "--breath-threshold",
         type=float,
         default=THRESHOLD_PPM,
@@ -297,17 +297,17 @@ def _reject_crossed_options(args: argparse.Namespace, parser: argparse.ArgumentP
         parser.error(f"{', '.join(offenders)} only applies to {owner}")
 
 
-def _check_race_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """Refuse race settings that cannot be honoured, rather than clamping them.
+def _check_derby_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Refuse derby settings that cannot be honoured, rather than clamping them.
 
     Silently correcting a figure out of range would leave the operator watching
     a game that is not the one they asked for, which is the same failure mode
     ``_reject_crossed_options`` exists to prevent.
     """
-    if not 1 <= args.race_players <= MAX_PLAYERS:
-        parser.error(f"--race-players must be between 1 and {MAX_PLAYERS}")
-    if args.race_goal is not None and args.race_goal <= 0:
-        parser.error("--race-goal must be positive")
+    if not 1 <= args.derby_players <= MAX_PLAYERS:
+        parser.error(f"--derby-players must be between 1 and {MAX_PLAYERS}")
+    if args.derby_goal is not None and args.derby_goal <= 0:
+        parser.error("--derby-goal must be positive")
     if args.breath_threshold <= 0:
         parser.error("--breath-threshold must be positive")
 
@@ -316,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     _reject_crossed_options(args, parser)
-    _check_race_options(args, parser)
+    _check_derby_options(args, parser)
 
     source = _build_simulated(args) if args.demo else _build_multicast(args, parser)
 
@@ -327,9 +327,9 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return 0
 
-    race = BreathRace(
-        players=args.race_players,
-        goal=args.race_goal,
+    derby = EddyDerby(
+        players=args.derby_players,
+        goal=args.derby_goal,
         detector=PuffDetector(threshold=args.breath_threshold),
     )
     VisualizerApp(
@@ -337,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         source.state,
         subtitle=source.subtitle,
         glyphs=GLYPH_SETS[args.glyphs],
-        race=race,
+        derby=derby,
         on_blow=source.blow,
     ).run()
     return 0

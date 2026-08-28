@@ -23,7 +23,7 @@ anti-correlated with the vertical wind so that w'c' has the sign of daytime
 uptake. It is a plausible-looking test signal, not a model of anything.
 
 :meth:`RecordSimulator.blow` adds a breath to the CO2 stream on demand, which
-is how the breath race is rehearsed and tested away from a site. It is the only
+is how the Eddy Derby is rehearsed and tested away from a site. It is the only
 thing here that anything downstream may ask for, and what it produces is still
 wire bytes: a simulated puff reaches the game through the decoder a live one
 would.
@@ -70,7 +70,7 @@ class SimulationConfig:
     #: Top of the analyzer's measurement range, umol mol-1. An open-path head
     #: reads to roughly here and no further, and simulating that limit is the
     #: point rather than a detail: exhaled breath is over ten times it, so a
-    #: real blow pins the reading, and the breath race is built around a score
+    #: real blow pins the reading, and the Eddy Derby is built around a score
     #: that still discriminates once it has. A simulator that let a puff run to
     #: 9000 would make the game look like it worked when it did not.
     co2_max_ppm: float = 3000.0
@@ -168,14 +168,14 @@ class RecordSimulator:
         """Breathe at the simulated inlet, starting from the next record.
 
         The one place anything upstream of this module can be asked to do
-        something, and it exists so the breath race can be rehearsed and tested
+        something, and it exists so the Eddy Derby can be rehearsed and tested
         without an analyzer. It stays a demo-only path: what it produces is
         ordinary wire bytes, indistinguishable downstream from a real puff, so
         the game is exercised through exactly the code a site would run.
 
         :param strength: multiplier on :attr:`SimulationConfig.breath_peak_ppm`.
             Random around 1 by default, so two demo breaths differ the way two
-            real ones do and the race does not end in a dead heat.
+            real ones do and the derby does not end in a dead heat.
         """
         self._breath_start = self._tick * self.dt
         self._breath_strength = self._rng.uniform(0.7, 1.3) if strength is None else strength

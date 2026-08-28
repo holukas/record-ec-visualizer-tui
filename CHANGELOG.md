@@ -7,7 +7,7 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Added
 
-- The breath race, a game played through the analyzer's own inlet, on `g`.
+- The Eddy Derby, a game played through the analyzer's own inlet, on `g`.
   Breathe at the inlet and the CO2 reading jumps from a few hundred
   umol mol-1 to thousands in a fraction of a second, which is the shortest
   route there is from "this box measures air" to "I can move that with my
@@ -15,7 +15,7 @@ Notable changes to this project, newest first. Version numbers follow
   running.
 - Each player takes a turn at the inlet, and an ASCII animal runs along their
   lane while they blow. The turn passes to the next lane when the breath ends.
-  On the race screen, `r` starts a new race, `a` and `x` add and drop a lane,
+  On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane,
   `n` passes a turn for someone who has stepped away, and `escape` goes back to
   the plots.
 - A breath scores the area under its peak, in ppm s, over the excess above
@@ -27,7 +27,7 @@ Notable changes to this project, newest first. Version numbers follow
   instead of half an hour.
 - The finish line is five times the first breath of the session, since the
   score depends on how far a mouth is from the inlet and no fixed figure suits
-  every mast. `--race-goal`, `--race-players` and `--breath-threshold` set the
+  every mast. `--derby-goal`, `--derby-players` and `--breath-threshold` set the
   goal, the lanes and the threshold explicitly.
 - `b` breathes for you under `--demo`, where there is no inlet to breathe into.
   The simulator puts the breath on the wire as bytes and clips it at the
@@ -36,7 +36,7 @@ Notable changes to this project, newest first. Version numbers follow
 
 ### Changed
 
-- The plots are not redrawn while the race is up, so the game costs nothing on
+- The plots are not redrawn while the derby is up, so the game costs nothing on
   top of the display it replaces. The streams keep arriving while it is open,
   and the plots pick up where they are when it is closed.
 

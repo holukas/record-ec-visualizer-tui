@@ -50,7 +50,7 @@ sonicshow  0.4s ago  analyzer  0.0s ago  li7500rs_buffer 198/200  li7500rs_freq 
 
 Keys: `q` quits, `space` pauses, `r` clears the plots, `c` changes the trace
 colours, `-` / `+` halve and double how much history is shown, and `g` opens
-the [breath race](#the-breath-race).
+the [Eddy Derby](#the-eddy-derby).
 
 Both plots always show the same stretch of time, one minute by default, and the
 range keys move them together. That is what makes the two readable against each
@@ -101,7 +101,7 @@ both streams next to the values they decode to:
 uv run python examples/demo_wire_format.py
 ```
 
-### The breath race
+### The Eddy Derby
 
 `g` opens a game. Breathe at the analyzer's inlet and the CO2 reading jumps
 from a few hundred umol mol-1 to thousands within a fraction of a second, which
@@ -110,7 +110,7 @@ with my lungs". It is meant for open days and visitors, and it is played on the
 instrument that is already running.
 
 ```
-BREATH RACE   breathe at the analyzer inlet - only 1000 umol mol-1 and above moves an animal
+EDDY DERBY   breathe at the analyzer inlet - only 1000 umol mol-1 and above moves an animal
 
  CO2    3000 [##############################]  ambient 426   this breath 413 ppm s (0.2 s)
 
@@ -136,12 +136,12 @@ of half an hour, which is a good thing to be able to point at.
 
 The finish line is five times the first breath of the session, since the score
 depends on how far a mouth is from the inlet and no fixed figure suits every
-mast. `--race-goal` sets it explicitly in ppm·s, `--race-players` starts with
+mast. `--derby-goal` sets it explicitly in ppm·s, `--derby-players` starts with
 more than two lanes, and `--breath-threshold` moves the line that counts.
 
-On the race screen, `r` starts a new race, `a` and `x` add and drop a lane, `n`
+On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane, `n`
 passes a turn for a player who has stepped away, and `escape` goes back to the
-plots. Nothing is drawn behind the race while it is up, so the game costs
+plots. Nothing is drawn behind the derby while it is up, so the game costs
 nothing on top of the display it replaces -- but the streams keep arriving, and
 the plots pick up where they are when you close it.
 
@@ -526,9 +526,9 @@ line, the analyzer addresses from `record.toml`.
 | `simulator.py` | Produces rECorD-format data for the demo |
 | `sources.py` | Delivers `(stream, line)` pairs, from the simulator or from multicast |
 | `model.py` | Keeps the recent values of each series, and when each stream was last heard from |
-| `game.py` | Scores breaths out of the CO2 stream, and runs the race between them |
+| `game.py` | Scores breaths out of the CO2 stream, and runs the derby between them |
 | `tui/plot.py` | Draws the line plots, in braille or half blocks |
-| `tui/race.py` | The breath race screen |
+| `tui/derby.py` | The Eddy Derby screen |
 | `tui/app.py` | The Textual application |
 
 `sources.py` is the boundary between live and simulated data. Everything above

@@ -26,7 +26,7 @@ from textual.widgets import Footer, Header, Static
 
 from record_ec_visualizer_tui import __version__
 from record_ec_visualizer_tui.codec import DecodeError, parse_ga_message, parse_show_message
-from record_ec_visualizer_tui.game import BreathRace
+from record_ec_visualizer_tui.game import EddyDerby
 from record_ec_visualizer_tui.model import (
     MAX_WINDOW_SECONDS,
     WIND_RAW_KEYS,
@@ -35,7 +35,7 @@ from record_ec_visualizer_tui.model import (
 )
 from record_ec_visualizer_tui.simulator import SONICSHOW_STREAM
 from record_ec_visualizer_tui.tui.plot import BRAILLE, GlyphSet, render_braille_plot
-from record_ec_visualizer_tui.tui.race import RaceScreen
+from record_ec_visualizer_tui.tui.derby import DerbyScreen
 
 LABEL_WIDTH = 8
 
@@ -182,9 +182,9 @@ class VisualizerApp(App[None]):
         ("space", "toggle_pause", "Pause"),
         ("r", "reset", "Reset series"),
         ("c", "cycle_palette", "Colours"),
-        ("g", "toggle_race", "Breath race"),
+        ("g", "toggle_derby", "Eddy Derby"),
         # Hidden, because it only does anything under --demo and the footer is
-        # read on a logging host where it never will. The race screen names it
+        # read on a logging host where it never will. The derby screen names it
         # when there is a simulator behind it.
         Binding("b", "demo_breath", "Breath (demo)", show=False),
         # equals_sign as well as plus, so widening does not need the shift key.
@@ -199,15 +199,15 @@ class VisualizerApp(App[None]):
         subtitle: str = "",
         refresh_hz: float = 8.0,
         glyphs: GlyphSet = BRAILLE,
-        race: BreathRace | None = None,
+        derby: EddyDerby | None = None,
         on_blow: Callable[[], None] | None = None,
     ) -> None:
         """
-        :param race: the breath race this session plays, always present so the
+        :param derby: the Eddy Derby this session plays, always present so the
             key that opens it always works. It is fed from the analyzer stream
             whether or not anybody is looking, which costs a handful of float
             operations per record and keeps the screen honest: opening it
-            mid-session shows the race as it actually stands.
+            mid-session shows the derby as it actually stands.
         :param on_blow: injects a breath into the source. Wired only under
             ``--demo``, where there is a simulator to inject into; ``None``
             against a live site, and the key then does nothing.
@@ -216,7 +216,7 @@ class VisualizerApp(App[None]):
         self._lines = lines
         self.state = state
         self.glyphs = glyphs
-        self.race = race if race is not None else BreathRace()
+        self.derby = derby if derby is not None else EddyDerby()
         self._on_blow = on_blow
         self.paused = False
         # Indices rather than the values themselves: both are cheap to fold
@@ -299,10 +299,10 @@ class VisualizerApp(App[None]):
                     self.state.ingest_sonicshow(parse_show_message(payload))
                 elif name.startswith("ga:"):
                     # Fed here, one record at a time, rather than from the
-                    # redraw: the race scores an integral over the analyzer's
+                    # redraw: the derby scores an integral over the analyzer's
                     # 20 Hz stream, and sampling that eight times a second
                     # would throw most of the breath away.
-                    self.race.feed(*self.state.ingest_ga(parse_ga_message(payload)))
+                    self.derby.feed(*self.state.ingest_ga(parse_ga_message(payload)))
             except DecodeError as exc:
                 health = (
                     self.state.sonic_health if name == SONICSHOW_STREAM else self.state.gas_health
@@ -336,12 +336,12 @@ class VisualizerApp(App[None]):
         on is wider than the differences between them.
         """
         if self.screen is not self.screen_stack[0]:
-            # The race screen is up and these panels are not on show. Redrawing
+            # The derby screen is up and these panels are not on show. Redrawing
             # them anyway would be the most expensive thing this program does,
             # spent on a picture nobody can see, on a machine whose real job is
             # rECorD's acquisition loop. The buffers keep filling regardless,
             # since decoding is an app worker rather than anything a screen
-            # owns, so the plots are correct the moment the race is closed.
+            # owns, so the plots are correct the moment the derby is closed.
             return
 
         state = self.state
@@ -420,15 +420,15 @@ class VisualizerApp(App[None]):
     def action_cycle_palette(self) -> None:
         self._palette = (self._palette + 1) % len(PALETTES)
 
-    def action_toggle_race(self) -> None:
-        """Open the breath race, or close it and go back to the plots."""
-        if isinstance(self.screen, RaceScreen):  # pragma: no cover - the screen binds g itself
+    def action_toggle_derby(self) -> None:
+        """Open the Eddy Derby, or close it and go back to the plots."""
+        if isinstance(self.screen, DerbyScreen):  # pragma: no cover - the screen binds g itself
             self.pop_screen()
             return
-        self.push_screen(RaceScreen(self.state, self.race, self._on_blow))
+        self.push_screen(DerbyScreen(self.state, self.derby, self._on_blow))
         # Forgotten now rather than on the way back, because nothing redraws
-        # while the race is up: whatever the panels still show is a picture
-        # from before the race and the first frame afterwards has to replace
+        # while the derby is up: whatever the panels still show is a picture
+        # from before the derby and the first frame afterwards has to replace
         # it, however long the game lasted.
         self._drawn = None
 

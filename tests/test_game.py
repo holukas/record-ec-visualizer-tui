@@ -1,4 +1,4 @@
-"""The breath race, from a single sample to a finished race.
+"""The Eddy Derby, from a single sample to a finished derby.
 
 The scoring rules are what these assert on, because every one of them is a
 choice that a plausible-looking alternative would quietly break: an integral
@@ -15,7 +15,7 @@ from record_ec_visualizer_tui.game import (
     MAX_PUFF_SECONDS,
     MIN_PUFF_SCORE,
     THRESHOLD_PPM,
-    BreathRace,
+    EddyDerby,
     PuffDetector,
 )
 
@@ -143,103 +143,103 @@ class TestPuffDetector:
         assert detector.ambient == pytest.approx(500.0, abs=1.0)
 
 
-class TestBreathRace:
+class TestEddyDerby:
     def test_the_first_breath_sets_the_finish_line(self):
         """No fixed goal suits every mast, so the session calibrates itself."""
-        race = BreathRace(players=2)
-        assert race.goal is None
-        elapsed = _blow(race.detector, level=2000.0, seconds=2.0)
-        race.feed(elapsed, 420.0)
-        assert race.goal == pytest.approx(2000.0 * GOAL_BREATHS, rel=0.05)
+        derby = EddyDerby(players=2)
+        assert derby.goal is None
+        elapsed = _blow(derby.detector, level=2000.0, seconds=2.0)
+        derby.feed(elapsed, 420.0)
+        assert derby.goal == pytest.approx(2000.0 * GOAL_BREATHS, rel=0.05)
 
     def test_a_breath_moves_the_lane_whose_turn_it_is_and_then_passes_it(self):
-        race = BreathRace(players=2, goal=100_000.0)
-        first, second = race.racers
-        assert race.active is first
+        derby = EddyDerby(players=2, goal=100_000.0)
+        first, second = derby.racers
+        assert derby.active is first
 
         elapsed = 0.0
         for _ in range(40):
-            race.feed(elapsed, 3000.0)
+            derby.feed(elapsed, 3000.0)
             elapsed += 0.05
         # Moving during the breath is the whole feel of the game.
-        assert race.distance_of(first) > 0
+        assert derby.distance_of(first) > 0
         assert first.distance == 0.0
         for _ in range(40):
-            race.feed(elapsed, 420.0)
+            derby.feed(elapsed, 420.0)
             elapsed += 0.05
 
         assert first.distance > 0
         assert first.breaths == 1
-        assert race.active is second
+        assert derby.active is second
 
     def test_crossing_the_line_is_judged_during_the_breath(self):
         """The animal stops at the line, not a second later when it is scored."""
-        race = BreathRace(players=1, goal=500.0)
-        (racer,) = race.racers
+        derby = EddyDerby(players=1, goal=500.0)
+        (racer,) = derby.racers
         elapsed = 0.0
         while racer.place is None and elapsed < 5.0:
-            race.feed(elapsed, 3000.0)
+            derby.feed(elapsed, 3000.0)
             elapsed += 0.05
         assert racer.place == 1
-        assert race.detector.active is not None  # still blowing
-        assert race.fraction_of(racer) == 1.0
+        assert derby.detector.active is not None  # still blowing
+        assert derby.fraction_of(racer) == 1.0
 
-    def test_a_finished_lane_is_skipped_and_the_race_ends(self):
-        race = BreathRace(players=2, goal=1000.0)
-        first, second = race.racers
+    def test_a_finished_lane_is_skipped_and_the_derby_ends(self):
+        derby = EddyDerby(players=2, goal=1000.0)
+        first, second = derby.racers
         elapsed = 0.0
         for _ in range(6):
-            elapsed = _blow(race.detector, start=elapsed, level=3000.0, seconds=1.0)
-            race.feed(elapsed, 420.0)
+            elapsed = _blow(derby.detector, start=elapsed, level=3000.0, seconds=1.0)
+            derby.feed(elapsed, 420.0)
             elapsed += 0.05
-        assert race.over
+        assert derby.over
         assert [racer.place for racer in (first, second)] == [1, 2]
-        assert race.standings == [first, second]
-        assert race.active is None
+        assert derby.standings == [first, second]
+        assert derby.active is None
 
     def test_the_turn_passes_without_a_breath_when_a_player_walks_off(self):
-        race = BreathRace(players=3)
-        race.skip_turn()
-        assert race.active is race.racers[1]
+        derby = EddyDerby(players=3)
+        derby.skip_turn()
+        assert derby.active is derby.racers[1]
 
     def test_lanes_can_be_added_and_dropped_within_the_animals_there_are(self):
-        race = BreathRace(players=1)
-        while race.add_player():
+        derby = EddyDerby(players=1)
+        while derby.add_player():
             pass
-        assert len(race.racers) == MAX_PLAYERS
-        assert len({racer.animal for racer in race.racers}) == MAX_PLAYERS
-        while race.remove_player():
+        assert len(derby.racers) == MAX_PLAYERS
+        assert len({racer.animal for racer in derby.racers}) == MAX_PLAYERS
+        while derby.remove_player():
             pass
-        assert len(race.racers) == 1
+        assert len(derby.racers) == 1
 
     def test_a_reset_reopens_an_auto_calibrated_finish_line(self):
-        """A new race calibrates itself rather than inheriting the last pace."""
-        race = BreathRace(players=2)
-        elapsed = _blow(race.detector, level=2000.0, seconds=2.0)
-        race.feed(elapsed, 420.0)
-        assert race.goal
+        """A new derby calibrates itself rather than inheriting the last pace."""
+        derby = EddyDerby(players=2)
+        elapsed = _blow(derby.detector, level=2000.0, seconds=2.0)
+        derby.feed(elapsed, 420.0)
+        assert derby.goal
 
-        race.reset()
-        assert race.goal is None
-        assert all(racer.distance == 0 for racer in race.racers)
-        assert race.turn == 0
+        derby.reset()
+        assert derby.goal is None
+        assert all(racer.distance == 0 for racer in derby.racers)
+        assert derby.turn == 0
 
     def test_a_configured_finish_line_survives_a_reset(self):
-        race = BreathRace(players=2, goal=4321.0)
-        elapsed = _blow(race.detector, level=3000.0, seconds=1.0)
-        race.feed(elapsed, 420.0)
-        race.reset()
-        assert race.goal == 4321.0
+        derby = EddyDerby(players=2, goal=4321.0)
+        elapsed = _blow(derby.detector, level=3000.0, seconds=1.0)
+        derby.feed(elapsed, 420.0)
+        derby.reset()
+        assert derby.goal == 4321.0
 
     def test_a_breath_too_small_to_count_never_passes_the_turn(self):
-        race = BreathRace(players=2)
-        first = race.racers[0]
+        derby = EddyDerby(players=2)
+        first = derby.racers[0]
         elapsed = 0.0
         # Just over the line for a moment: less than MIN_PUFF_SCORE of area.
         for value in [1100.0, 1100.0, 420.0, 420.0, 420.0, 420.0, 420.0, 420.0]:
-            race.feed(elapsed, value)
+            derby.feed(elapsed, value)
             elapsed += 0.05
-        assert race.active is first
+        assert derby.active is first
         assert first.breaths == 0
         assert MIN_PUFF_SCORE > 0
 

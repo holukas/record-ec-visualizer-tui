@@ -1,4 +1,4 @@
-"""The breath race: a game played through the gas analyzer's own inlet.
+"""The Eddy Derby: a game played through the gas analyzer's own inlet.
 
 Breathe at an open-path analyzer and the CO2 reading jumps from a few hundred
 umol mol-1 to thousands, in a fraction of a second. That is a game waiting to
@@ -65,7 +65,7 @@ MAX_SAMPLE_GAP_S = 0.5
 #: Breaths the finish line is set to when it is calibrated from the first one.
 GOAL_BREATHS = 5
 
-#: The shortest race an auto-calibrated goal may set, ppm*s. A first breath
+#: The shortest derby an auto-calibrated goal may set, ppm*s. A first breath
 #: that barely registered would otherwise put the finish line within reach of
 #: a cough.
 MIN_GOAL = 500.0
@@ -241,7 +241,7 @@ class Racer:
     animal: str
     color: str
     #: Committed score, ppm*s. A breath in progress is not in here; ask
-    #: :meth:`BreathRace.distance_of` for the figure that includes it.
+    #: :meth:`EddyDerby.distance_of` for the figure that includes it.
     distance: float = 0.0
     breaths: int = 0
     best_breath: float = 0.0
@@ -255,7 +255,7 @@ class Racer:
 
 
 @dataclass
-class BreathRace:
+class EddyDerby:
     """Racers, turns and a finish line, driven by :class:`PuffDetector`.
 
     Turn-based, because there is one inlet: the players queue at it, one blows,
@@ -312,7 +312,7 @@ class BreathRace:
         """Start again with the same lanes, and re-open the finish line.
 
         The goal goes back to whatever was configured, which for the default is
-        nothing: a fresh race calibrates itself from its own first breath
+        nothing: a fresh derby calibrates itself from its own first breath
         rather than inheriting the pace of the last one.
         """
         for index, racer in enumerate(self.racers):
@@ -397,7 +397,7 @@ class BreathRace:
         self._finished.append(racer)
 
     def _next_turn(self) -> None:
-        """Pass to the next lane still in the race, if there is one."""
+        """Pass to the next lane still in the derby, if there is one."""
         for step in range(1, len(self.racers) + 1):
             candidate = (self.turn + step) % len(self.racers)
             if not self.racers[candidate].finished:

@@ -170,7 +170,7 @@ class TestEndToEndIntoState:
 
 
 class TestBreath:
-    """``blow()`` is how the breath race is rehearsed away from a site.
+    """``blow()`` is how the Eddy Derby is rehearsed away from a site.
 
     It has to produce the same thing a real breath does, which for a game
     scored on the area under the peak means one property above all: it
