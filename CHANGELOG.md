@@ -9,43 +9,30 @@ Notable changes to this project, newest first. Version numbers follow
 
 - The Eddy Derby, a game played through the analyzer's own inlet, on `g`.
   Breathe at the inlet and the CO2 reading jumps from a few hundred
-  umol mol-1 to thousands in a fraction of a second, which is the shortest
-  route there is from "this box measures air" to "I can move that with my
-  lungs". It is for open days and visitors, on the instrument that is already
-  running.
-- Each player takes a turn at the inlet, and an ASCII animal runs along their
-  lane while they blow. The turn passes to the next lane once the air is clear
-  of the breath, and the meter says `clearing` while it waits, since the score
-  and the animal both stand still for that second.
-  On the derby screen, `r` starts a new derby, `a` and `x` add and drop a lane,
-  `n` passes a turn for someone who has stepped away, and `escape` goes back to
-  the plots.
-- A breath scores the area under its peak, in ppm s, over the excess above
-  1000 umol mol-1. The highest reading is the obvious score and it does not
-  work: an open-path head measures to about 3000, breath is more than ten times
-  that, and everyone who leans close pins the sensor. An area still ranks blows
-  after the reading saturates, because what is left to vary is how long you
-  hold it there. It is also what the flux processing does, over one breath
-  instead of half an hour.
-- The finish line is 20,000 ppm s, about four or five hard breaths. It is the
-  same every session, so it can go on a sign next to the mast. A breath scores
-  less where the mast holds the inlet out of reach, which makes a longer derby;
-  `--derby-goal` moves the line. `--derby-players` and `--breath-threshold` set
-  the lanes and the level that counts.
-- Lanes that cross on the same numbered breath are placed by their total score.
-  P1 opens every round, so ranking by the moment of crossing handed P1 any
-  derby that finished level. Fewer breaths still wins outright, and a place can
-  change until the last player of the round has been scored.
-- `b` breathes for you under `--demo`, where there is no inlet to breathe into.
-  The simulator puts the breath on the wire as bytes and clips it at the
-  analyzer's 3000 umol mol-1 range, so it reaches the game through the same
-  decoder a real one would, saturation included.
+  umol mol-1 to thousands, which is the shortest route there is from "this box
+  measures air" to "I can move that with my lungs". For open days, on the
+  instrument that is already running.
+- Each player takes a turn and an ASCII animal runs along their lane while they
+  blow. The turn passes once the air is clear of the breath. On the derby
+  screen, `r` restarts, `a` and `x` add and drop a lane, `n` passes a turn, and
+  `escape` goes back to the plots.
+- A breath scores the area under its peak, in ppm s, above 1000 umol mol-1. The
+  peak value would not do: an open-path head measures to about 3000 and breath
+  is more than ten times that, so anyone who leans close pins it and the peaks
+  all tie.
+- The finish line is 20,000 ppm s, four or five hard breaths, the same every
+  session. Lanes that cross on the same numbered breath are placed by total
+  score. `--derby-goal`, `--derby-players` and `--breath-threshold` set the
+  line, the lanes and the level that counts.
+- `b` breathes for you under `--demo`. The simulator puts it on the wire as
+  bytes and clips it at the analyzer's 3000 umol mol-1 range, so it reaches the
+  game through the same decoder a real one would.
 
 ### Changed
 
 - The plots are not redrawn while the derby is up, so the game costs nothing on
-  top of the display it replaces. The streams keep arriving while it is open,
-  and the plots pick up where they are when it is closed.
+  top of the display it replaces. The streams keep arriving, and the plots pick
+  up where they are when it is closed.
 
 ## v0.3.1 | 20 Aug 2026
 
